@@ -15,7 +15,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from fhe.db.base import Base, ProvenanceMixin, TimestampMixin, json_column, uuid_column
+from fhe.db.base import (
+    SEASON_LONG_WEEK,
+    Base,
+    ProvenanceMixin,
+    TimestampMixin,
+    json_column,
+    uuid_column,
+)
 
 
 class FantasyProjection(Base, TimestampMixin, ProvenanceMixin):
@@ -33,8 +40,9 @@ class FantasyProjection(Base, TimestampMixin, ProvenanceMixin):
     )
 
     season: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    # NULL week means a full-season projection, which is what a draft uses.
-    week: Mapped[int | None] = mapped_column(Integer, index=True)
+    # ``SEASON_LONG_WEEK`` (0) means a full-season projection, which is what a
+    # draft uses. Not nullable - see SEASON_LONG_WEEK for why.
+    week: Mapped[int] = mapped_column(Integer, nullable=False, default=SEASON_LONG_WEEK, index=True)
     scoring_format: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
 
     projected_points: Mapped[float] = mapped_column(Float, nullable=False)

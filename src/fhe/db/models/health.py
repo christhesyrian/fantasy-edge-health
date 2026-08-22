@@ -17,7 +17,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from fhe.db.base import Base, ProvenanceMixin, TimestampMixin, json_column, uuid_column
+from fhe.db.base import (
+    SEASON_LONG_WEEK,
+    Base,
+    ProvenanceMixin,
+    TimestampMixin,
+    json_column,
+    uuid_column,
+)
 
 
 class InjuryEvent(Base, TimestampMixin, ProvenanceMixin):
@@ -39,7 +46,8 @@ class InjuryEvent(Base, TimestampMixin, ProvenanceMixin):
     )
 
     season: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    week: Mapped[int | None] = mapped_column(Integer, index=True)
+    # Not nullable: it participates in the uniqueness key. See SEASON_LONG_WEEK.
+    week: Mapped[int] = mapped_column(Integer, nullable=False, default=SEASON_LONG_WEEK, index=True)
     game_type: Mapped[str | None] = mapped_column(String(8))
 
     body_region: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
@@ -77,7 +85,8 @@ class PracticeReport(Base, TimestampMixin, ProvenanceMixin):
     )
 
     season: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    week: Mapped[int | None] = mapped_column(Integer, index=True)
+    # Not nullable: it participates in the uniqueness key. See SEASON_LONG_WEEK.
+    week: Mapped[int] = mapped_column(Integer, nullable=False, default=SEASON_LONG_WEEK, index=True)
     report_date: Mapped[date | None] = mapped_column(Date)
 
     status: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -176,7 +185,8 @@ class AvailabilityPrediction(Base, TimestampMixin, ProvenanceMixin):
     calibrated: Mapped[bool] = mapped_column(nullable=False, default=False)
 
     season: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    week: Mapped[int | None] = mapped_column(Integer)
+    # Not nullable: it participates in the uniqueness key. See SEASON_LONG_WEEK.
+    week: Mapped[int] = mapped_column(Integer, nullable=False, default=SEASON_LONG_WEEK)
     features: Mapped[dict[str, Any] | None] = mapped_column(json_column())
 
     __table_args__ = (

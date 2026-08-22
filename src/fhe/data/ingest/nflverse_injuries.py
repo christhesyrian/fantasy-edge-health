@@ -35,7 +35,7 @@ from fhe.core.types import BodyRegion, Position, PracticeStatus
 from fhe.data.identity import clean_token
 from fhe.data.ingest.lookup import load_external_id_map
 from fhe.data.ingest.run import IngestionRunRecorder, ingestion_run
-from fhe.db.base import utcnow
+from fhe.db.base import SEASON_LONG_WEEK, utcnow
 from fhe.db.models.health import InjuryEvent, PracticeReport
 from fhe.db.upsert import upsert_rows
 from fhe.observability import get_logger
@@ -128,8 +128,8 @@ async def ingest_injuries_for_season(
         practice_rows: list[dict[str, Any]] = []
         # (player_uuid, season, week) already emitted, so a provider that
         # repeats a player-week does not fail the unique constraint.
-        seen_injury: set[tuple[str, int, int | None]] = set()
-        seen_practice: set[tuple[str, int, int | None]] = set()
+        seen_injury: set[tuple[str, int, int]] = set()
+        seen_practice: set[tuple[str, int, int]] = set()
         out_of_scope = 0
         now = utcnow()
 
@@ -150,10 +150,13 @@ async def ingest_injuries_for_season(
                     out_of_scope += 1
                 continue
 
-            week = _as_int(row.get("week"))
-            if week is not None and not (MIN_WEEK <= week <= MAX_WEEK):
-                run.reject("implausible_week", gsis_id=gsis_id, week=week, season=season)
+            raw_week = _as_int(row.get("week"))
+            if raw_week is not None and not (MIN_WEEK <= raw_week <= MAX_WEEK):
+                run.reject("implausible_week", gsis_id=gsis_id, week=raw_week, season=season)
                 continue
+            # A missing week becomes the sentinel rather than NULL, so the
+            # uniqueness key that makes re-ingestion idempotent still works.
+            week = SEASON_LONG_WEEK if raw_week is None else raw_week
 
             raw_primary = clean_token(row.get("report_primary_injury"))
             raw_secondary = clean_token(row.get("report_secondary_injury"))

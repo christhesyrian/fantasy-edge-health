@@ -5,7 +5,13 @@ from __future__ import annotations
 from sqlalchemy import Float, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
-from fhe.db.base import Base, ProvenanceMixin, TimestampMixin, uuid_column
+from fhe.db.base import (
+    SEASON_LONG_WEEK,
+    Base,
+    ProvenanceMixin,
+    TimestampMixin,
+    uuid_column,
+)
 
 
 class PlayerWeeklyStat(Base, TimestampMixin, ProvenanceMixin):
@@ -90,7 +96,8 @@ class DepthChartSnapshot(Base, TimestampMixin, ProvenanceMixin):
     )
 
     season: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    week: Mapped[int | None] = mapped_column(Integer)
+    # Not nullable: it participates in the uniqueness key. See SEASON_LONG_WEEK.
+    week: Mapped[int] = mapped_column(Integer, nullable=False, default=SEASON_LONG_WEEK)
     team: Mapped[str | None] = mapped_column(String(8))
     depth_position: Mapped[str | None] = mapped_column(String(16))
     depth_order: Mapped[int | None] = mapped_column(Integer)

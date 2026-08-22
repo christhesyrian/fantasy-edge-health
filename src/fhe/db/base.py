@@ -38,6 +38,19 @@ NAMING_CONVENTION = {
 }
 
 
+# Sentinel used in place of NULL for "not week-specific" - a season-long
+# projection, or an observation whose week is unknown.
+#
+# This exists because SQL treats NULL as never equal to NULL, so a unique
+# constraint containing a nullable column silently fails to deduplicate: two
+# season-long projections for the same player both satisfy
+# UNIQUE(player_uuid, season, week, ...) and ON CONFLICT never fires. Making the
+# column NOT NULL with an explicit sentinel keeps the constraint meaningful on
+# both PostgreSQL and SQLite, without partial or expression indexes that
+# ON CONFLICT cannot target portably.
+SEASON_LONG_WEEK: int = 0
+
+
 def json_column() -> TypeEngine[Any]:
     """JSON that becomes JSONB on PostgreSQL.
 
