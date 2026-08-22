@@ -1,13 +1,12 @@
 # HANDOFF — Fantasy Health Edge
 
-**Read this first when resuming work.** It captures everything needed to
-continue without re-deriving decisions or re-researching external providers.
+**Read this first when resuming work.** It records the verified facts, the
+decisions and their reasoning, the bugs already found, and the ordered backlog —
+so none of it has to be re-derived.
 
-- **Last session ended:** 2026-08-22
-- **Branch:** `master` (3 commits, working tree clean)
+- **Last updated:** 2026-08-22
+- **Branch:** `master`, 12 commits, working tree clean
 - **Governing spec:** [`docs/MASTER_BUILD_DIRECTIVE.md`](docs/MASTER_BUILD_DIRECTIVE.md)
-  — the original build prompt, copied into the repo verbatim so it is never lost.
-  **Re-read it before continuing**; it defines the acceptance criteria.
 
 ---
 
@@ -15,243 +14,166 @@ continue without re-deriving decisions or re-researching external providers.
 
 > **Claude takes no credit for the code.**
 
-No `Co-Authored-By: Claude` commit trailers, no "Generated with Claude Code" in
-PR bodies, no AI attribution in source or docs. Existing commits follow this.
-`CLAUDE.md` / `.claude/` are functional tooling config, not credit, and are fine.
+No `Co-Authored-By` trailers, no "generated with" footers, no AI attribution in
+source or docs. Every commit so far follows this. `CLAUDE.md` and `.claude/` are
+functional tooling config, not credit.
 
 ---
 
-## 1. How to resume in one minute
+## 1. Resume in one minute
 
 ```bash
-./.venv/bin/python -m pytest -q
+make quality        # format, lint, mypy, pytest, then the frontend gates
 ```
 
-Expected: **295 passed**. Then:
+Expected: **411 Python tests**, **33 frontend tests**, ruff clean, `mypy --strict`
+clean across 98 files, eslint clean, `tsc` clean.
+
+See it run:
 
 ```bash
-./.venv/bin/ruff check src tests && ./.venv/bin/ruff format --check src tests && ./.venv/bin/mypy
+make dev-api        # terminal one → http://localhost:8000
+make dev-web        # terminal two → http://localhost:3000
 ```
 
-Expected: all clean, `Success: no issues found in 60 source files`.
-
-See the live board render end to end:
-
-```bash
-./.venv/bin/python -c "
-from fhe.core.simulation import generate_player_pool, MockDraftSimulator, SimulationConfig
-from fhe.core.draft import evaluate_draft, compute_replacement_baseline
-from fhe.core.league import LeagueSettings
-ls = LeagueSettings.from_tokens(team_count=12, user_draft_slot=5,
-    roster_position_tokens=['QB','RB','RB','WR','WR','TE','FLEX','K','DEF']+['BN']*6)
-pool = generate_player_pool(); base = compute_replacement_baseline(pool, ls)
-sim = MockDraftSimulator(ls, pool, config=SimulationConfig(seed=42)); sim.advance_to_user_turn()
-b = evaluate_draft(sim.state, pool, user_draft_slot=5, baseline=base)
-print(b.best_pick.name, b.best_pick.overall_score, b.best_pick.recommendation.value)
-for c in b.best_pick.components: print(f'  {c.points:+7.2f}  {c.label}: {c.detail}')
-"
-```
+Or headless: `./.venv/bin/python -m fhe.cli simulate --seed 42`
 
 ---
 
 ## 2. Environment (verified, do not re-derive)
 
-| Thing | Value | Notes |
-| --- | --- | --- |
-| Python | **3.14.3** at `/opt/homebrew/bin/python3.14` | Only 3.12+ available. `python3` on PATH is Anaconda **3.9** — do not use it. |
-| venv | `./.venv` | Created from 3.14.3. **Always invoke `./.venv/bin/python`**, never bare `python3`. |
-| Node | v25.6.0, npm 11.12.0 | `pnpm` NOT installed. Use npm, or install pnpm. |
-| Docker | installed, **daemon NOT running** | `docker compose` unusable until the user starts Docker Desktop. |
-| Postgres / Redis | **not installed natively** | Hence the SQLite + in-process-bus fallbacks. |
-| git identity | christhesyrian / cbeshara17@gmail.com | |
-
-Installed and confirmed working on 3.14: fastapi 0.141.1, pydantic 2.13.4,
-sqlalchemy 2.0.52, httpx 0.28.1, polars 1.43.2, pyarrow 25.0.1, scikit-learn 1.9.0,
-numpy 2.5.2, alembic 1.19.1, structlog, redis, respx, ruff, mypy, pytest.
+| Thing | Value |
+| --- | --- |
+| Python | **3.14.3** at `/opt/homebrew/bin/python3.14`. Bare `python3` is Anaconda **3.9** — never use it. |
+| venv | `./.venv`. **Always invoke `./.venv/bin/python`.** |
+| Node | v25.6.0, npm 11.12.0. No pnpm. npm workspaces from the repo root. |
+| Docker | Installed; **daemon was not running**. Compose is untested here as a result. |
+| Postgres / Redis | Not installed natively — hence the fallbacks. |
 
 ---
 
-## 3. Verified external facts — DO NOT re-research, DO NOT guess
+## 3. Verified external facts — do not re-research
 
-All verified live on **2026-08-22**. The directive's §47 anti-hallucination rule
-applies: anything not listed here must be verified before use.
+Full detail with measurements in [`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md).
+The headlines that shaped the design:
 
-### Sleeper API (`https://api.sleeper.app/v1`)
-- Read-only, **no authentication**.
-- Documented limit: *"stay under 1000 API calls per minute, otherwise you risk
-  being IP-blocked."* Our self-imposed ceiling is 600 rpm.
-- `/players/nfl` is **14.6 MB** (docs claim ~5 MB) and returns **12,221** players.
-  Docs say call it *"only once per day at most"*. We cache it on disk.
-- **Not-found behaviour is inconsistent** (verified by curl):
-  - unknown **user** → HTTP **200**, body `null`
-  - unknown **league** → HTTP **404**, body `null`
-  - unknown **draft**/picks → HTTP **404**, body `null`
-- **`roster_id` on a draft pick is an integer in live responses**, though the docs
-  show a string. Both are parsed.
-- Live picks carry an **undocumented `reactions` field**.
-- `is_keeper` is `null`, not `false`, when unset.
-- Current NFL state: season **2026**, `season_type` **"pre"**, week 2.
-- Player-payload injury fields and their real coverage (of 12,221):
-  `injury_status` 653, `injury_body_part` 575, `injury_notes` 84,
-  **`practice_participation` only 1**, `injury_start_date` present but all-null.
-  → **Sleeper is not a usable source of practice data.** Use nflverse.
-
-### nflverse (GitHub Releases)
-- Stable URL pattern:
-  `https://github.com/nflverse/nflverse-data/releases/download/<tag>/<asset>`
-- **The directive's claim that injury data ends after 2024 is OUT OF DATE.**
-  Verified: `injuries_YYYY.parquet` exists for **2009–2025**. The 2025 file has
-  **6,068 rows across weeks 1–22** and the release was rebuilt **2026-03-18**.
-  There is no 2026 file — expected, the season hasn't started.
-- `snap_counts` 2012–2025; `depth_charts` 2001–2026; `rosters` through 2026.
-- `players.parquet` (rebuilt daily; 25,050 rows) has `gsis_id`, `esb_id`,
-  `nfl_id`, `pfr_id`, `pff_id`, `otc_id`, `espn_id`, `smart_id` —
-  **but NO `sleeper_id`**.
-- Injuries schema: `season, game_type, team, week, gsis_id, position, full_name,
-  first_name, last_name, report_primary_injury, report_secondary_injury,
-  report_status, practice_primary_injury, practice_secondary_injury,
-  practice_status, date_modified`.
-- **Dirty data to keep handling:** `practice_status` contains literal `"\n    "`
-  padding rows and a `"Note"` value. `report_status` includes `"Note"`.
-
-### Identity crosswalk (DynastyProcess)
-- `https://raw.githubusercontent.com/dynastyprocess/data/master/files/db_playerids.csv`
-- **License: GPL-3.0.** This repo is MIT. → **Never commit this file.** It is
-  fetched at runtime into the gitignored `data/cache/`. Documented in the code.
-- **Missing values are the literal string `"NA"`** — the single nastiest trap in
-  this dataset. `clean_token()` handles it; tests lock it down.
-- Coverage measured live: Sleeper carries `gsis_id` for only **~21%** of top-200
-  fantasy players. With the crosswalk, resolution reaches **100% of top 200
-  (0 conflicts)**, 99.2% of top 400, **97.1% of all 1,038 rostered players**.
+- **Sleeper** is public and unauthenticated. Documented limit 1000 req/min; we
+  self-limit to 600. `/players/nfl` is 14.6 MB (docs say ~5 MB) with 12,221
+  players, cached 20 hours.
+- **Sleeper's not-found behaviour is inconsistent**: unknown user → HTTP 200
+  with `null`; unknown league or draft → 404.
+- **`roster_id` on a pick is an integer**, though documented as a string.
+- **Sleeper practice fields are populated for 1 player in 12,221.** Unusable.
+  Practice data comes from nflverse.
+- **Sleeper `gsis_id` covers only 21% of top-200 players**, and nflverse has no
+  `sleeper_id`. This measurement is why the crosswalk exists.
+- **The directive's claim that nflverse injuries end after 2024 is wrong.**
+  Coverage is 2009–**2025**; the 2025 file is complete (6,068 rows, weeks 1–22).
+- **The DynastyProcess crosswalk is GPL-3.0** — fetched at runtime into a
+  git-ignored cache, never committed. Missing values are the literal string
+  `"NA"`.
 
 ---
 
-## 4. What is built (3 commits, all gates green)
+## 4. What is built
 
 ```
 src/fhe/
-├── config.py              Settings; SQLite + in-process-bus fallbacks
-├── observability.py       structlog (with secret redaction) + prometheus metrics
-├── core/                  ★ PURE DOMAIN — zero I/O, enforced by a test
-│   ├── types.py           Position, RosterSlot, ScoringFormat, InjuryDesignation,
-│   │                      PracticeStatus, BodyRegion, Recommendation, ...
-│   ├── league.py          LeagueSettings, replacement level, snake pick maths
-│   ├── errors.py
-│   ├── injury/            taxonomy.py (99.97% coverage), practice.py
-│   ├── health/            models.py, heuristic.py  (heuristic-v1)
-│   ├── draft/             models, state, vorp, scarcity, survival, roster,
-│   │                      engine, board, service (evaluate_draft = entry point)
-│   └── simulation/        pool.py (synthetic, seeded), simulator.py
+├── config.py, observability.py, cli.py
+├── core/            ★ PURE — enforced by an AST test
+│   ├── types, league, errors
+│   ├── injury/      taxonomy (99.97% coverage), practice trajectory
+│   ├── health/      heuristic-v1 scorer
+│   ├── draft/       state, vorp, scarcity, survival, roster, engine, board, service
+│   └── simulation/  synthetic pool, seeded simulator
 ├── data/
-│   ├── identity.py        IdentityResolver, PlayerCrosswalk, UUIDv5 minting
-│   └── providers/         base.py (retry/jitter/rate-limit), sleeper.py, nflverse.py
-└── db/                    base.py, session.py, models/ (26 tables)
+│   ├── identity.py  UUIDv5 resolution, crosswalk, conflicts
+│   ├── providers/   base (retry/jitter/limits), sleeper, nflverse
+│   └── ingest/      run lineage, sleeper_players, nflverse_injuries, csv_import
+├── db/              base, session, upsert, models/ (26 tables)
+├── api/             app, deps, errors, middleware, events (SSE), mappers,
+│                    services/, routers/ (health, simulations, imports,
+│                    diagnostics, sleeper)
+└── worker/          draft_poller.py
 
-tests/  unit (8 files) · contract (sleeper) · architecture (purity) · integration (schema)
-data/fixtures/  nflverse_injury_descriptors.json · sleeper/*.json (sanitized)
+apps/web/            Next.js 16 war room — see §7
+alembic/             initial revision, drift test
+.claude/             4 agents, 4 skills
+.github/workflows/   4-job CI
+docs/                9 documents + 6 ADRs
 ```
 
-### Bugs found and fixed while building — do not reintroduce
-1. **Kickers ranked #3 overall.** `VALUED_POSITIONS` excluded K/DEF, so they got
-   no replacement baseline and their VORP equalled their entire projection.
-   Fixed via `ROSTERABLE_POSITIONS`. Locked by
-   `test_kickers_and_defenses_are_not_drafted_early`.
-2. **Round-14 defense scored like the 1.01.** `max_vorp` was computed over
-   *available* players, so the best remaining player always normalised to 1.0.
-   Fixed with `ReplacementBaseline.max_vorp` — a fixed pre-draft scale.
-3. **Survival probability said a 25-pick faller was 0.01% likely to last.**
-   Fixed by re-anchoring the distribution on the current pick when a player
-   falls past their ADP.
-4. **Superflex QB replacement was QB14** (should be ~QB22). Weighting flex by
-   dedicated slots is wrong for SUPER_FLEX; added `_SUPERFLEX_QB_SHARE = 0.85`.
-5. **`"chest"` normalised to REST** via substring matching. All taxonomy
-   matching is now word-boundary regex.
-6. **`@unique` enum crash** from a duplicate `BodyRegion` alias value.
-7. **`cached_property` + `slots=True`** is incompatible — `LeagueSettings` has no
-   slots, deliberately, with a comment saying why.
-8. **`user_draft_slot=None` couldn't mean "no human seat"** because `or` fell
-   back to the league default. Fixed with an `_UNSET` sentinel.
+### Bugs already found and fixed — do not reintroduce
+
+Each has a regression test named after the symptom.
+
+1. **Kicker ranked #3 overall** — K/DEF had no replacement baseline, so VORP
+   equalled their whole projection.
+2. **Round-14 defense scored like the 1.01** — VORP normalised against the
+   *available* pool instead of a fixed pre-draft scale.
+3. **A 25-pick faller reported 0.01% survival** — fixed by re-anchoring the
+   distribution on the current pick.
+4. **Superflex QB replacement was QB14**, should be ~QB22.
+5. **`"chest"` normalised to REST** — substring matching; now word-boundary regex.
+6. **Re-importing projections duplicated every row** — a nullable `week` in a
+   unique key cannot deduplicate, because `NULL != NULL`. Now `SEASON_LONG_WEEK`.
+7. **External id collisions** — the crosswalk claims one id for two players in 3
+   cases out of 24,441. Resolved by confidence, loser reported.
+8. **The unresolved-identity metric counted out-of-scope linemen** — reported
+   4,147 failures where the real number was 3.
+9. **SSE subscriber registered lazily** — an async generator's body runs on
+   first `__anext__`, so events published in that window were lost.
+10. **`EventSource.onmessage` never fired** — the server emits *named* events.
+    The stream connected, reported LIVE, and delivered nothing.
+11. `@unique` enum crash from a duplicate alias; `cached_property` incompatible
+    with `slots=True`; `user_draft_slot=None` could not express "no human seat".
 
 ---
 
-## 5. What is NOT built yet — resume here, in this order
+## 5. What is NOT built — resume here
 
-### Phase A — Ingestion (next task)
-`src/fhe/data/ingest/` — nothing exists yet.
-- `sleeper_players.py`: sync Sleeper payload → `players` + `player_external_ids`
-  + `current_player_health`, via `IdentityResolver`, writing
-  `player_identity_conflicts` and a `data_ingestion_runs` row.
-- `nflverse_injuries.py`: seasons 2009–2025 → `injury_events` + `practice_reports`
-  (normalise with `fhe.core.injury`; **keep the raw text**).
-- `nflverse_stats.py`: weekly stats + snap counts → workload features.
-- `crosswalk.py`: download GPL crosswalk into `data/cache/` (never commit).
-- `csv_import.py`: **manual ADP/projection CSV import** — directive §8 requires
-  this from day one so the product works with no paid API. Validated schemas in
-  `data/schemas/`.
-- `quality.py`: the checks listed in directive §13, writing `data_quality_results`.
+### Next: wire the live Sleeper draft end to end
+The poller (`src/fhe/worker/draft_poller.py`) and onboarding endpoints exist and
+are tested, but nothing connects them to a war room session. Needed:
+- Persist a connected league/draft into `fantasy_leagues` / `drafts`
+- A `DraftSession` backed by a live draft rather than a simulator
+- An endpoint to connect a draft and start its poller
+- Onboarding UI (the button currently, correctly, says "not yet wired up")
 
-### Phase B — Alembic
-`alembic/` does not exist. `alembic init`, point `target_metadata` at
-`fhe.db.Base.metadata`, import `fhe.db.models`, generate the initial revision.
-Note: schema currently created via `create_all` in tests only.
-
-### Phase C — FastAPI (`src/fhe/api/` — empty)
-Endpoints per directive §26. Must include SSE (`/drafts/{id}/events`),
-liveness vs readiness split, `Settings.storage_warnings()` surfaced in `/health`,
-CORS from `cors_origin_list`, and OpenAPI published for frontend type generation.
-
-### Phase D — Live draft worker (`src/fhe/worker/` — empty)
-Poll loop at `draft_poll_interval_seconds` (3s default) → `DraftState.apply_picks`
-(already idempotent) → persist → publish event → recompute board → SSE.
-Event bus needs a Redis impl + the in-process fallback.
-
-### Phase E — Frontend (`apps/web/` — empty)
-Next.js War Room per directive §19–22. **Design the API contract first**, then
-build against it. Directive §21 forbids a generic shadcn dashboard and AI-purple
-gradients; wants an original dark sports-operations aesthetic.
-
-### Phase F — ML (`src/fhe/ml/` — empty)
-Directive §14B. Only after historical features exist. Time-based splits,
-leakage audit, calibration, `docs/MODEL_CARD.md`, guarded promotion.
-
-### Phase G — Ops & docs
-`.claude/agents` + `.claude/skills` (dirs exist, empty), `.github/workflows/`,
-`docker-compose.yml`, `Makefile`, and the docs set in directive §36
-(`ARCHITECTURE`, `DATA_SOURCES`, `DATA_MODEL`, `DRAFT_ENGINE`, `INJURY_MODEL`,
-`MODEL_CARD`, `RUNBOOK`, `SECURITY`, `INTERVIEW_GUIDE`, ADRs).
-
-**`docs/DATA_SOURCES.md` is overdue** — §4 of the directive requires it, and all
-the facts for it are in section 3 above.
+### Then
+- **Weekly stats + snap counts ingestion** — workload is the weakest-evidenced
+  input to the health model
+- **Playwright E2E** over the demo path (directive §32)
+- **ML** (`src/fhe/ml/` is empty) — only after workload features exist; see
+  `docs/MODEL_CARD.md` for the promotion bar
+- **Data quality checks** writing to `data_quality_results` (directive §13)
+- **Command palette, favourites, light mode toggle** (directive §22, §10)
+- **Docker Compose verification** — never run, because the daemon was down
 
 ---
 
-## 6. Architectural decisions made (record as ADRs when writing docs)
+## 6. Decisions and their reasoning
 
-1. **Single Python distribution, `src/fhe/`**, rather than separate packages per
-   service. The core/IO boundary is enforced by an AST test
-   (`tests/architecture/test_core_purity.py`) instead of by packaging, which is
-   stronger and has no install friction. `services/api` and `services/worker`
-   remain as deployment units.
-2. **SQLite + in-process bus fallbacks** so the demo runs with no Docker. Both
-   are loudly reported, never silent.
-3. **VORP uses a static pre-draft baseline.** Draft dynamics are modelled by the
-   separate scarcity and survival terms; a dynamic baseline would double-count.
-4. **Additive, decomposable scoring.** Explainability outranks marginal accuracy
-   under a draft clock.
-5. **Two-pass ranking** resolves the `adp_value`/`model_rank` circularity.
-6. **`player_uuid` is UUIDv5 anchored on `gsis_id`**, so it is stable across
-   re-ingestion without a DB round-trip.
-7. **Python 3.14** (only 3.12+ available); `requires-python = ">=3.12"`.
+Recorded as ADRs in [`docs/adr/`](docs/adr/): single Python distribution,
+additive scoring, zero-infrastructure fallbacks, the runtime crosswalk, SSE over
+WebSockets, and the static VORP baseline. Read those before changing any of them.
 
 ---
 
-## 7. Conventions to keep
+## 7. Frontend notes
 
-- Every constant named and justified; no inline magic numbers.
-- Every score decomposable; components must reconcile to the total (there are
-  tests asserting exactly this).
-- Missing data lowers **confidence**; it never invents risk or a value.
-- Never discard raw provider text.
-- No bare `except` (enforced by a test); no `print` (ruff `T20`).
-- Language: "availability risk", never "will get injured" (directive §43).
-- Tests must never depend on the network. Live tests go behind the `live` marker.
+- Design is a "broadcast control room": warm near-black, sodium-vapor amber,
+  Saira Condensed for labels, IBM Plex Mono for every number.
+- **Risk is encoded three ways** — glyph, word, colour. Keep it that way.
+- **The board is always read from the server.** Events trigger a refetch; they
+  never patch local state.
+- SSE is tested against a real uvicorn server. httpx's `ASGITransport` never
+  sends `http.disconnect`, so a streaming response never completes under it.
+
+---
+
+## 8. Conventions
+
+See [`CLAUDE.md`](CLAUDE.md). The load-bearing ones: core stays pure, every
+score decomposes, missing data lowers confidence rather than inventing risk, raw
+provider text is never discarded, and no test is ever weakened to get green.
