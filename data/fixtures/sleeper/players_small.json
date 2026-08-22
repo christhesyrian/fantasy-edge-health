@@ -1,0 +1,92 @@
+{
+  "_verified_on": "2026-08-22",
+  "_note": "synthetic values, real field shape",
+  "players": {
+    "1001": {
+      "player_id": "1001",
+      "full_name": "Ameer Abdullah",
+      "first_name": "Ameer",
+      "last_name": "Abdullah",
+      "position": "RB",
+      "team": "JAX",
+      "active": true,
+      "age": 33,
+      "years_exp": 11,
+      "height": "69",
+      "weight": "203",
+      "college": "Nebraska",
+      "number": 43,
+      "search_rank": 550,
+      "gsis_id": "00-0032104",
+      "injury_status": null,
+      "injury_body_part": null,
+      "depth_chart_position": "RB",
+      "depth_chart_order": 5
+    },
+    "1002": {
+      "player_id": "1002",
+      "full_name": "Injured Star",
+      "first_name": "Injured",
+      "last_name": "Star",
+      "position": "WR",
+      "team": "SEA",
+      "active": true,
+      "age": 27,
+      "years_exp": 5,
+      "height": "6'2",
+      "weight": "210",
+      "search_rank": 12,
+      "gsis_id": null,
+      "injury_status": "IR",
+      "injury_body_part": "Knee - ACL",
+      "injury_notes": "season ending",
+      "depth_chart_position": "WR",
+      "depth_chart_order": 1
+    },
+    "1003": {
+      "player_id": "1003",
+      "full_name": "Unlinked Rookie",
+      "first_name": "Unlinked",
+      "last_name": "Rookie",
+      "position": "TE",
+      "team": "GB",
+      "active": true,
+      "age": 22,
+      "years_exp": 0,
+      "search_rank": 400,
+      "injury_status": "Questionable",
+      "injury_body_part": "right Shoulder"
+    },
+    "1004": {
+      "player_id": "1004",
+      "full_name": "Left Tackle",
+      "first_name": "Left",
+      "last_name": "Tackle",
+      "position": "OT",
+      "team": "KC",
+      "active": true,
+      "age": 28,
+      "search_rank": 9999
+    },
+    "1005": {
+      "player_id": null,
+      "full_name": "No Id Player",
+      "position": "WR",
+      "team": "NYJ",
+      "active": true
+    },
+    "1006": {
+      "player_id": "1006",
+      "full_name": "Bad Age",
+      "position": "QB",
+      "team": "LAR",
+      "active": true,
+      "age": 250,
+      "years_exp": -3,
+      "height": "999",
+      "weight": "9",
+      "number": "abc",
+      "search_rank": 800
+    }
+  }
+}

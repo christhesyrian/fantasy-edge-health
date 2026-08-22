@@ -478,8 +478,13 @@ class SleeperProvider:
 
     async def get_all_players(
         self, *, cache_path: Path | None = None, force_refresh: bool = False
-    ) -> dict[str, dict[str, Any]]:
+    ) -> dict[str, Any]:
         """The full NFL player universe.
+
+        Typed as ``dict[str, Any]`` rather than ``dict[str, dict[str, Any]]``
+        because only the outer object is validated here. Claiming every value is
+        a dict would be a promise this method does not keep, and would make the
+        caller's defensive check look like dead code.
 
         This is the endpoint the provider asks callers to hit at most once a day,
         so the response is cached on disk and only refetched when the cache is
@@ -521,7 +526,7 @@ class SleeperProvider:
         log.info("sleeper_players_refreshed", player_count=len(payload), path=str(path))
         return payload
 
-    def _read_player_cache(self, path: Path) -> dict[str, dict[str, Any]] | None:
+    def _read_player_cache(self, path: Path) -> dict[str, Any] | None:
         """Return the cached player payload when it is present and fresh."""
         if not path.exists():
             return None

@@ -71,9 +71,7 @@ _REDACTED_KEYS = frozenset(
 _REDACTED = "[redacted]"
 
 
-def _redact(
-    _logger: object, _method: str, event_dict: dict[str, Any]
-) -> dict[str, Any]:
+def _redact(_logger: object, _method: str, event_dict: dict[str, Any]) -> dict[str, Any]:
     """Structlog processor that strips credential-shaped values."""
     for key in list(event_dict):
         if key.lower() in _REDACTED_KEYS:
@@ -110,9 +108,7 @@ def configure_logging(settings: Settings) -> None:
 
     structlog.configure(
         processors=processors,
-        wrapper_class=structlog.make_filtering_bound_logger(
-            getattr(logging, settings.log_level)
-        ),
+        wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, settings.log_level)),
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
