@@ -1,0 +1,49 @@
+[
+  {
+    "_verified_on": "2026-08-22",
+    "total_rosters": 12,
+    "status": "pre_draft",
+    "sport": "nfl",
+    "season_type": "regular",
+    "season": "2026",
+    "settings": {
+      "num_teams": 12,
+      "playoff_teams": 6,
+      "draft_rounds": 15,
+      "type": 0
+    },
+    "scoring_settings": {
+      "rec": 1.0,
+      "pass_td": 4.0,
+      "rush_td": 6.0,
+      "rec_td": 6.0,
+      "pass_yd": 0.04,
+      "rush_yd": 0.1,
+      "rec_yd": 0.1,
+      "fum_lost": -2.0,
+      "pass_int": -2.0
+    },
+    "roster_positions": [
+      "QB",
+      "RB",
+      "RB",
+      "WR",
+      "WR",
+      "TE",
+      "FLEX",
+      "K",
+      "DEF",
+      "BN",
+      "BN",
+      "BN",
+      "BN",
+      "BN",
+      "BN"
+    ],
+    "previous_league_id": "200000000000000000",
+    "name": "Demo Dynasty",
+    "league_id": "200000000000000001",
+    "draft_id": "300000000000000001",
+    "avatar": "0000000000000000000000000000bbbb"
+  }
+]
