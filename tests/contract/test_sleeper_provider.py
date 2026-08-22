@@ -44,7 +44,7 @@ def fixture(name: str) -> Any:
 def settings(tmp_path: Path) -> Settings:
     """Settings pointed at a temporary data directory."""
     return Settings(
-        _env_file=None,  # type: ignore[call-arg]
+        _env_file=None,
         data_dir=tmp_path,
         sleeper_base_url=BASE,
         sleeper_max_rpm=60000,  # do not throttle the test suite

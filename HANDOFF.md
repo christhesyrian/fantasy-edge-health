@@ -33,7 +33,7 @@ Expected: **295 passed**. Then:
 ./.venv/bin/ruff check src tests && ./.venv/bin/ruff format --check src tests && ./.venv/bin/mypy
 ```
 
-Expected: all clean, `Success: no issues found in 42 source files`.
+Expected: all clean, `Success: no issues found in 60 source files`.
 
 See the live board render end to end:
 

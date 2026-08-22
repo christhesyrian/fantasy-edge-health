@@ -24,7 +24,7 @@ done: implemented, formatted, linted, type-checked, tested, documented.
 ## Quality gates
 
 Current on `master`: **295 tests pass**, `ruff check` clean, `ruff format --check`
-clean, `mypy --strict` clean across 42 source files.
+clean, `mypy --strict` clean across 60 source files.
 
 ## Log
 

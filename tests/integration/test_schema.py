@@ -48,7 +48,7 @@ EXPECTED_TABLES = {
 
 
 async def test_schema_creates_on_the_sqlite_fallback(tmp_path: Path) -> None:
-    engine = create_engine(Settings(_env_file=None, data_dir=tmp_path))  # type: ignore[call-arg]
+    engine = create_engine(Settings(_env_file=None, data_dir=tmp_path))
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
