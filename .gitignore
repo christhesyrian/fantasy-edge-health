@@ -1,0 +1,65 @@
+# ---------- secrets ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ---------- python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+dist/
+build/
+
+# ---------- node ----------
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+.eslintcache
+playwright-report/
+test-results/
+blob-report/
+
+# ---------- data (never commit bulk provider dumps) ----------
+data/raw/
+data/cache/
+data/warehouse/
+data/imports/*
+!data/imports/.gitkeep
+!data/imports/README.md
+*.parquet
+*.duckdb
+*.sqlite
+*.sqlite3
+*.db
+# fixtures are the deliberate exception: small, sanitized, committed on purpose
+!data/fixtures/**
+
+# ---------- ml artifacts ----------
+ml/artifacts/
+ml/datasets/
+*.pkl
+*.joblib
+!ml/registry/**/*.json
+
+# ---------- os / editor ----------
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# ---------- claude local ----------
+.claude/settings.local.json

@@ -1,0 +1,1076 @@
+{
+ "source": "nflverse injuries releases 2019-2025",
+ "verified_on": "2026-08-22",
+ "distinct": 267,
+ "total_observations": 62915,
+ "descriptors": [
+  {
+   "value": "Knee",
+   "count": 10143
+  },
+  {
+   "value": "Ankle",
+   "count": 8214
+  },
+  {
+   "value": "Hamstring",
+   "count": 5555
+  },
+  {
+   "value": "Shoulder",
+   "count": 4386
+  },
+  {
+   "value": "Concussion",
+   "count": 2937
+  },
+  {
+   "value": "Not injury related - resting player",
+   "count": 2887
+  },
+  {
+   "value": "Illness",
+   "count": 2796
+  },
+  {
+   "value": "Groin",
+   "count": 2462
+  },
+  {
+   "value": "Foot",
+   "count": 2358
+  },
+  {
+   "value": "Back",
+   "count": 2091
+  },
+  {
+   "value": "Calf",
+   "count": 2080
+  },
+  {
+   "value": "Hip",
+   "count": 1885
+  },
+  {
+   "value": "Neck",
+   "count": 1425
+  },
+  {
+   "value": "Not Injury Related",
+   "count": 1331
+  },
+  {
+   "value": "Quadricep",
+   "count": 1248
+  },
+  {
+   "value": "Toe",
+   "count": 1007
+  },
+  {
+   "value": "Elbow",
+   "count": 932
+  },
+  {
+   "value": "Hand",
+   "count": 741
+  },
+  {
+   "value": "Wrist",
+   "count": 673
+  },
+  {
+   "value": "Not injury related - personal matter",
+   "count": 651
+  },
+  {
+   "value": "Ribs",
+   "count": 637
+  },
+  {
+   "value": "Thumb",
+   "count": 515
+  },
+  {
+   "value": "Chest",
+   "count": 480
+  },
+  {
+   "value": "Thigh",
+   "count": 469
+  },
+  {
+   "value": "Abdomen",
+   "count": 410
+  },
+  {
+   "value": "Pectoral",
+   "count": 390
+  },
+  {
+   "value": "Achilles",
+   "count": 385
+  },
+  {
+   "value": "Oblique",
+   "count": 340
+  },
+  {
+   "value": "Finger",
+   "count": 312
+  },
+  {
+   "value": "Rib",
+   "count": 311
+  },
+  {
+   "value": "Heel",
+   "count": 239
+  },
+  {
+   "value": "Shin",
+   "count": 186
+  },
+  {
+   "value": "Biceps",
+   "count": 171
+  },
+  {
+   "value": "Not injury related - resting p",
+   "count": 137
+  },
+  {
+   "value": "right Shoulder",
+   "count": 126
+  },
+  {
+   "value": "Fibula",
+   "count": 124
+  },
+  {
+   "value": "Triceps",
+   "count": 123
+  },
+  {
+   "value": "Forearm",
+   "count": 123
+  },
+  {
+   "value": "right Thumb",
+   "count": 96
+  },
+  {
+   "value": "right Groin",
+   "count": 72
+  },
+  {
+   "value": "Eye",
+   "count": 62
+  },
+  {
+   "value": "Rest",
+   "count": 61
+  },
+  {
+   "value": "Glute",
+   "count": 50
+  },
+  {
+   "value": "Not injury related - other",
+   "count": 47
+  },
+  {
+   "value": "left Knee",
+   "count": 45
+  },
+  {
+   "value": "right Hip",
+   "count": 42
+  },
+  {
+   "value": "left Shoulder",
+   "count": 39
+  },
+  {
+   "value": "right Quadricep",
+   "count": 34
+  },
+  {
+   "value": "right Elbow",
+   "count": 34
+  },
+  {
+   "value": "Collarbone",
+   "count": 31
+  },
+  {
+   "value": "Head",
+   "count": 30
+  },
+  {
+   "value": "Core",
+   "count": 30
+  },
+  {
+   "value": "Pelvis",
+   "count": 30
+  },
+  {
+   "value": "Not injury related - personal ",
+   "count": 28
+  },
+  {
+   "value": "right Finger",
+   "count": 27
+  },
+  {
+   "value": "Right Shoulder",
+   "count": 27
+  },
+  {
+   "value": "right Knee",
+   "count": 22
+  },
+  {
+   "value": "Tibia",
+   "count": 22
+  },
+  {
+   "value": "Left Knee",
+   "count": 22
+  },
+  {
+   "value": "right Hamstring",
+   "count": 20
+  },
+  {
+   "value": "Throat",
+   "count": 18
+  },
+  {
+   "value": "Left Hand",
+   "count": 18
+  },
+  {
+   "value": "Ankles",
+   "count": 17
+  },
+  {
+   "value": "Stinger",
+   "count": 17
+  },
+  {
+   "value": "Right Wrist",
+   "count": 17
+  },
+  {
+   "value": "left Thumb",
+   "count": 16
+  },
+  {
+   "value": "Jaw",
+   "count": 15
+  },
+  {
+   "value": "left Finger",
+   "count": 14
+  },
+  {
+   "value": "kidney",
+   "count": 14
+  },
+  {
+   "value": "gameday concussion protocol evaluation",
+   "count": 14
+  },
+  {
+   "value": "Tooth",
+   "count": 13
+  },
+  {
+   "value": "left Wrist",
+   "count": 12
+  },
+  {
+   "value": "left Hand",
+   "count": 12
+  },
+  {
+   "value": "left Ankle",
+   "count": 12
+  },
+  {
+   "value": "COVID Ramp Up",
+   "count": 11
+  },
+  {
+   "value": "right Hand",
+   "count": 10
+  },
+  {
+   "value": "Non-Football Illness",
+   "count": 10
+  },
+  {
+   "value": "Coach's decision",
+   "count": 10
+  },
+  {
+   "value": "Coaching Decision ",
+   "count": 10
+  },
+  {
+   "value": "Coach's Decision",
+   "count": 10
+  },
+  {
+   "value": "Not injury related - coach's decision",
+   "count": 10
+  },
+  {
+   "value": "Lung",
+   "count": 10
+  },
+  {
+   "value": "Cramps",
+   "count": 8
+  },
+  {
+   "value": "Left Finger",
+   "count": 8
+  },
+  {
+   "value": "not injury related - travel",
+   "count": 7
+  },
+  {
+   "value": "back, ankle, knee",
+   "count": 7
+  },
+  {
+   "value": "not injury related - returning from suspension",
+   "count": 7
+  },
+  {
+   "value": "Right Ankle",
+   "count": 7
+  },
+  {
+   "value": "Right Hamstring",
+   "count": 7
+  },
+  {
+   "value": "Left Shoulder",
+   "count": 7
+  },
+  {
+   "value": "Right Hip",
+   "count": 7
+  },
+  {
+   "value": "Right Elbow",
+   "count": 7
+  },
+  {
+   "value": "Adductor",
+   "count": 6
+  },
+  {
+   "value": "Face",
+   "count": 6
+  },
+  {
+   "value": "Hamstrings",
+   "count": 6
+  },
+  {
+   "value": "COVID Protocol",
+   "count": 6
+  },
+  {
+   "value": "Hernia",
+   "count": 6
+  },
+  {
+   "value": "Not injury related - did not travel",
+   "count": 6
+  },
+  {
+   "value": "left Hamstring",
+   "count": 6
+  },
+  {
+   "value": "Left Hamstring",
+   "count": 6
+  },
+  {
+   "value": "Coaching Decision",
+   "count": 6
+  },
+  {
+   "value": "right Ankle",
+   "count": 5
+  },
+  {
+   "value": "Appendix",
+   "count": 5
+  },
+  {
+   "value": "right Forearm",
+   "count": 5
+  },
+  {
+   "value": "Liver",
+   "count": 5
+  },
+  {
+   "value": "left Hip",
+   "count": 5
+  },
+  {
+   "value": "left Groin",
+   "count": 5
+  },
+  {
+   "value": "Elbow, Knee",
+   "count": 5
+  },
+  {
+   "value": "Lower Leg",
+   "count": 5
+  },
+  {
+   "value": "Hands",
+   "count": 5
+  },
+  {
+   "value": "Not injury related - coaching decision",
+   "count": 5
+  },
+  {
+   "value": "right Calf",
+   "count": 5
+  },
+  {
+   "value": "Toe, Pec, Knee, Hip",
+   "count": 5
+  },
+  {
+   "value": "left Quadricep",
+   "count": 5
+  },
+  {
+   "value": "Right Thumb",
+   "count": 5
+  },
+  {
+   "value": "Tricep",
+   "count": 4
+  },
+  {
+   "value": "Lower leg",
+   "count": 4
+  },
+  {
+   "value": "Knee Illness",
+   "count": 4
+  },
+  {
+   "value": "Not injury related -- resting veteran",
+   "count": 4
+  },
+  {
+   "value": "left Foot",
+   "count": 4
+  },
+  {
+   "value": "Core Muscle Injury",
+   "count": 4
+  },
+  {
+   "value": "right Wrist",
+   "count": 4
+  },
+  {
+   "value": "Other",
+   "count": 4
+  },
+  {
+   "value": "Nose, Back",
+   "count": 4
+  },
+  {
+   "value": "Elbow Knee",
+   "count": 4
+  },
+  {
+   "value": "not injury related - team decision",
+   "count": 4
+  },
+  {
+   "value": "Coaching",
+   "count": 4
+  },
+  {
+   "value": "coach decision",
+   "count": 4
+  },
+  {
+   "value": "Right Hand",
+   "count": 4
+  },
+  {
+   "value": "Right Finger",
+   "count": 4
+  },
+  {
+   "value": "Knees",
+   "count": 3
+  },
+  {
+   "value": "Hip Flexor",
+   "count": 3
+  },
+  {
+   "value": "Personal",
+   "count": 3
+  },
+  {
+   "value": "Heat Related",
+   "count": 3
+  },
+  {
+   "value": "oblique",
+   "count": 3
+  },
+  {
+   "value": "Resting Veteran",
+   "count": 3
+  },
+  {
+   "value": "left Calf",
+   "count": 3
+  },
+  {
+   "value": "Resting Vet",
+   "count": 3
+  },
+  {
+   "value": "Not injury related - discipline",
+   "count": 3
+  },
+  {
+   "value": "not injury related",
+   "count": 3
+  },
+  {
+   "value": "Oblique ",
+   "count": 3
+  },
+  {
+   "value": "knee, ankle, back",
+   "count": 3
+  },
+  {
+   "value": "Nose",
+   "count": 3
+  },
+  {
+   "value": "Hips",
+   "count": 3
+  },
+  {
+   "value": "-- ",
+   "count": 3
+  },
+  {
+   "value": "Right Forearm",
+   "count": 3
+  },
+  {
+   "value": "Right Quadricep",
+   "count": 3
+  },
+  {
+   "value": "Left Foot",
+   "count": 3
+  },
+  {
+   "value": "Left Elbow",
+   "count": 3
+  },
+  {
+   "value": "Sternoclavicular",
+   "count": 2
+  },
+  {
+   "value": "Hamstring, Wrist",
+   "count": 2
+  },
+  {
+   "value": "Ribs Knee",
+   "count": 2
+  },
+  {
+   "value": "Ankle / Shoulder",
+   "count": 2
+  },
+  {
+   "value": "left Thigh",
+   "count": 2
+  },
+  {
+   "value": "right Shin",
+   "count": 2
+  },
+  {
+   "value": "Ankle Elbow",
+   "count": 2
+  },
+  {
+   "value": "Thigh/Non-Injury",
+   "count": 2
+  },
+  {
+   "value": "Calf, Resting Veteran",
+   "count": 2
+  },
+  {
+   "value": "Elbow and Knee",
+   "count": 2
+  },
+  {
+   "value": "Hand, Neck",
+   "count": 2
+  },
+  {
+   "value": "Rib, Ankle",
+   "count": 2
+  },
+  {
+   "value": "Load Management",
+   "count": 2
+  },
+  {
+   "value": "Illness (Non-COVID)",
+   "count": 2
+  },
+  {
+   "value": "COVID Protocols",
+   "count": 2
+  },
+  {
+   "value": "Reserve/COVID activation",
+   "count": 2
+  },
+  {
+   "value": "Covid/Reserve",
+   "count": 2
+  },
+  {
+   "value": "Covid Ramp up",
+   "count": 2
+  },
+  {
+   "value": "Knee/Shoulder/Toe",
+   "count": 2
+  },
+  {
+   "value": "NIR-medical",
+   "count": 2
+  },
+  {
+   "value": "Appendicitis",
+   "count": 2
+  },
+  {
+   "value": "ankle, knee, elbow",
+   "count": 2
+  },
+  {
+   "value": "nose, back",
+   "count": 2
+  },
+  {
+   "value": "Back, Ankle",
+   "count": 2
+  },
+  {
+   "value": "Knee / Hamstring",
+   "count": 2
+  },
+  {
+   "value": "elbow, knee",
+   "count": 2
+  },
+  {
+   "value": "Pec / Knee",
+   "count": 2
+  },
+  {
+   "value": "Back Foot",
+   "count": 2
+  },
+  {
+   "value": "Pec, Knee",
+   "count": 2
+  },
+  {
+   "value": "Foot/Wrist/Hip",
+   "count": 2
+  },
+  {
+   "value": "Returning from Suspension",
+   "count": 2
+  },
+  {
+   "value": "Knee, Foot",
+   "count": 2
+  },
+  {
+   "value": "right Shoulder, rib",
+   "count": 2
+  },
+  {
+   "value": "back, toe",
+   "count": 2
+  },
+  {
+   "value": "hand, illness",
+   "count": 2
+  },
+  {
+   "value": "Knee, Back, Toe",
+   "count": 2
+  },
+  {
+   "value": "Ankle [Not Injury Related - Personal, Thursday Only]",
+   "count": 2
+  },
+  {
+   "value": "Right Foot",
+   "count": 2
+  },
+  {
+   "value": "Third injury: Ankle",
+   "count": 2
+  },
+  {
+   "value": "Hamstring, Abdomen",
+   "count": 2
+  },
+  {
+   "value": "Feet",
+   "count": 2
+  },
+  {
+   "value": "Right Knee",
+   "count": 2
+  },
+  {
+   "value": "Teeth",
+   "count": 2
+  },
+  {
+   "value": "right Foot",
+   "count": 1
+  },
+  {
+   "value": "Non-Football Injury",
+   "count": 1
+  },
+  {
+   "value": "cramps",
+   "count": 1
+  },
+  {
+   "value": "Thighs",
+   "count": 1
+  },
+  {
+   "value": "Dehydration",
+   "count": 1
+  },
+  {
+   "value": "Burner",
+   "count": 1
+  },
+  {
+   "value": "- Resting Veteran",
+   "count": 1
+  },
+  {
+   "value": "Knee Neck",
+   "count": 1
+  },
+  {
+   "value": "Ankle, Elbow",
+   "count": 1
+  },
+  {
+   "value": "Knee/Shoulder",
+   "count": 1
+  },
+  {
+   "value": "calves",
+   "count": 1
+  },
+  {
+   "value": "Core Muscle",
+   "count": 1
+  },
+  {
+   "value": "right hip",
+   "count": 1
+  },
+  {
+   "value": "Upper Arm",
+   "count": 1
+  },
+  {
+   "value": "Vet Rest",
+   "count": 1
+  },
+  {
+   "value": "Neck, Back",
+   "count": 1
+  },
+  {
+   "value": "Thumb and Neck",
+   "count": 1
+  },
+  {
+   "value": "Trap",
+   "count": 1
+  },
+  {
+   "value": "Headache",
+   "count": 1
+  },
+  {
+   "value": "Travel After Trade",
+   "count": 1
+  },
+  {
+   "value": "Not injury related",
+   "count": 1
+  },
+  {
+   "value": "Abdomen/Throat/Back",
+   "count": 1
+  },
+  {
+   "value": "shin laceration",
+   "count": 1
+  },
+  {
+   "value": " Shoulder/Toe/Knee",
+   "count": 1
+  },
+  {
+   "value": "Thumb/Not Injury Related - Per",
+   "count": 1
+  },
+  {
+   "value": "placed on injured reserve",
+   "count": 1
+  },
+  {
+   "value": "Ribs, Not injury related - res",
+   "count": 1
+  },
+  {
+   "value": "Knee, ankle",
+   "count": 1
+  },
+  {
+   "value": "groin, wrist",
+   "count": 1
+  },
+  {
+   "value": "Hip/Shoulder (Rt.)",
+   "count": 1
+  },
+  {
+   "value": "Foot, Groin",
+   "count": 1
+  },
+  {
+   "value": "Wrist, Knee",
+   "count": 1
+  },
+  {
+   "value": "Medical",
+   "count": 1
+  },
+  {
+   "value": "appendix",
+   "count": 1
+  },
+  {
+   "value": "toe, pec, knee, hip",
+   "count": 1
+  },
+  {
+   "value": "lower leg cramps",
+   "count": 1
+  },
+  {
+   "value": "shoulder, biceps, hand",
+   "count": 1
+  },
+  {
+   "value": "Not Injury Related - Travel",
+   "count": 1
+  },
+  {
+   "value": "concussion protocol",
+   "count": 1
+  },
+  {
+   "value": "Concussion Protocol",
+   "count": 1
+  },
+  {
+   "value": "Not injury related - travel",
+   "count": 1
+  },
+  {
+   "value": "Elbow Ankle",
+   "count": 1
+  },
+  {
+   "value": "Inactive",
+   "count": 1
+  },
+  {
+   "value": "ankle, knee",
+   "count": 1
+  },
+  {
+   "value": "Arm",
+   "count": 1
+  },
+  {
+   "value": "Return from suspension",
+   "count": 1
+  },
+  {
+   "value": "Right Arm (Laceration)",
+   "count": 1
+  },
+  {
+   "value": "Not Injury Related - Returning From Suspension",
+   "count": 1
+  },
+  {
+   "value": "neck stinger",
+   "count": 1
+  },
+  {
+   "value": "Ankle / Knee",
+   "count": 1
+  },
+  {
+   "value": "Stomach",
+   "count": 1
+  },
+  {
+   "value": "quadricep, triceps",
+   "count": 1
+  },
+  {
+   "value": "Abdomen / Illness",
+   "count": 1
+  },
+  {
+   "value": "rib, not injury related - rest",
+   "count": 1
+  },
+  {
+   "value": "Knee, Toe, Rest",
+   "count": 1
+  },
+  {
+   "value": "Knee, Illness",
+   "count": 1
+  },
+  {
+   "value": "back, toe, rest",
+   "count": 1
+  },
+  {
+   "value": "Oblique, Knee",
+   "count": 1
+  },
+  {
+   "value": "Shoulder, Hamstring",
+   "count": 1
+  },
+  {
+   "value": "Player was ill this morning. Fully expected to play. No game status. ",
+   "count": 1
+  },
+  {
+   "value": "Trent Sherfield Sr. did not travel with the team today for personal reasons. He is traveling separately and is expected to be available for Sunday\u2019s game.",
+   "count": 1
+  },
+  {
+   "value": "personal matter",
+   "count": 1
+  },
+  {
+   "value": "Raym, Andrew has cleared concussion protocol and does not have a game status. ",
+   "count": 1
+  },
+  {
+   "value": "Concussion. Tremble has cleared concussion protocol. His game status is a result of a back injury.",
+   "count": 1
+  },
+  {
+   "value": "Did not travel to Brazil due to a personal matter and will not play in the game.",
+   "count": 1
+  },
+  {
+   "value": "Achilles - Out",
+   "count": 1
+  },
+  {
+   "value": "Ribs, Triceps",
+   "count": 1
+  },
+  {
+   "value": "Lips",
+   "count": 1
+  },
+  {
+   "value": "Jury Duty",
+   "count": 1
+  },
+  {
+   "value": "Left Wrist",
+   "count": 1
+  },
+  {
+   "value": "Left Ankle",
+   "count": 1
+  },
+  {
+   "value": "Right Biceps",
+   "count": 1
+  },
+  {
+   "value": "Left Biceps",
+   "count": 1
+  },
+  {
+   "value": "Thumb, Foot",
+   "count": 1
+  },
+  {
+   "value": "concussion evaluation",
+   "count": 1
+  }
+ ]
+}

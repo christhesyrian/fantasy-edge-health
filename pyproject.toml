@@ -1,0 +1,144 @@
+[project]
+name = "fantasy-health-edge"
+version = "0.1.0"
+description = "Injury-adjusted fantasy football draft intelligence and live draft war room."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+
+dependencies = [
+  # ---- web / api ----
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "sse-starlette>=2.1",
+  "python-multipart>=0.0.17",
+  # ---- config / validation ----
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  # ---- persistence ----
+  "sqlalchemy[asyncio]>=2.0.36",
+  "alembic>=1.14",
+  "asyncpg>=0.30",
+  "aiosqlite>=0.20",
+  "greenlet>=3.1",
+  # ---- providers / io ----
+  "httpx>=0.28",
+  "tenacity>=9.0",
+  "orjson>=3.10",
+  # ---- cache / events ----
+  "redis>=5.2",
+  # ---- data engineering ----
+  "polars>=1.14",
+  "pyarrow>=18.0",
+  # ---- observability ----
+  "structlog>=24.4",
+  "prometheus-client>=0.21",
+]
+
+[project.optional-dependencies]
+ml = [
+  "numpy>=2.1",
+  "pandas>=2.2",
+  "scikit-learn>=1.5",
+]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=6.0",
+  "ruff>=0.8",
+  "mypy>=1.13",
+  "types-redis",
+  "respx>=0.22",
+]
+
+[project.scripts]
+fhe = "fhe.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/fhe"]
+
+# --------------------------------------------------------------------------
+# Ruff
+# --------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W",    # pycodestyle
+  "F",         # pyflakes
+  "I",         # isort
+  "N",         # pep8-naming
+  "UP",        # pyupgrade
+  "B",         # bugbear
+  "C4",        # comprehensions
+  "SIM",       # simplify
+  "TID",       # tidy imports
+  "RUF",       # ruff-specific
+  "ASYNC",     # async correctness
+  "S",         # bandit security
+  "BLE",       # blind except  -> enforces "no bare except"
+  "T20",       # no print()
+  "PTH",       # pathlib
+  "ARG",       # unused arguments
+  "ERA",       # commented-out code
+]
+ignore = [
+  "S101",   # assert: allowed (pytest + internal invariants)
+  "B008",   # FastAPI Depends() in defaults is idiomatic
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "ARG001", "ARG002", "S105", "S106"]
+"scripts/**" = ["T20"]
+"src/fhe/cli.py" = ["T20"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fhe", "tests"]
+
+# --------------------------------------------------------------------------
+# mypy
+# --------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests"]
+strict = true
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+disallow_any_generics = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = ["polars.*", "pyarrow.*", "sklearn.*", "prometheus_client.*"]
+ignore_missing_imports = true
+
+# --------------------------------------------------------------------------
+# pytest
+# --------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers --strict-config"
+markers = [
+  "unit: pure domain tests, no I/O",
+  "contract: provider contract tests against saved fixtures",
+  "integration: tests that need a database or other local service",
+  "live: opt-in tests that hit real external providers (deselected by default)",
+  "architecture: structural/dependency rules",
+]
+filterwarnings = ["error::DeprecationWarning:fhe.*"]
+
+[tool.coverage.run]
+source = ["src/fhe"]
+branch = true
+
+[tool.coverage.report]
+skip_empty = true
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
