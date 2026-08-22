@@ -63,3 +63,7 @@ Thumbs.db
 
 # ---------- claude local ----------
 .claude/settings.local.json
+
+# ---------- next.js build output ----------
+apps/web/.next/
+apps/web/out/
