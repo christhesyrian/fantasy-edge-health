@@ -11,7 +11,9 @@ from fhe.api.schemas import (
     DraftAlertOut,
     DraftPickOut,
     HealthOut,
+    InjuryEventOut,
     LeagueSettingsOut,
+    PlayerDetail,
     PlayerSummary,
     PositionScarcityOut,
     RecommendationOut,
@@ -19,6 +21,7 @@ from fhe.api.schemas import (
     RosterSlotOut,
     ScoreComponentOut,
     TeamRosterOut,
+    WorkloadOut,
 )
 from fhe.core.draft.board import DraftAlert
 from fhe.core.draft.engine import PlayerRecommendation
@@ -58,6 +61,59 @@ def health_out(assessment: HealthAssessment) -> HealthOut:
             for c in assessment.components
         ],
         limitations=list(assessment.limitations),
+    )
+
+
+def player_detail(player: DraftablePlayer, *, is_demo: bool) -> PlayerDetail:
+    """Map a draftable player to the full drawer payload.
+
+    Injury history is returned newest-first so a timeline renders in the order a
+    reader scans it, and the raw provider descriptor rides along with every
+    normalised region.
+    """
+    workload = player.workload
+    return PlayerDetail(
+        player_uuid=player.player_uuid,
+        name=player.name,
+        position=player.position.value,
+        team=player.team,
+        age=player.age,
+        years_experience=player.years_experience,
+        bye_week=player.bye_week,
+        health=health_out(player.health) if player.health else None,
+        injury_history=[
+            InjuryEventOut(
+                season=event.season,
+                week=event.week,
+                body_region=event.region.value,
+                raw_descriptor=event.raw_descriptor,
+                designation=event.designation.value,
+                games_missed=event.games_missed,
+            )
+            for event in sorted(
+                player.injury_history,
+                key=lambda e: (e.season, e.week or 0),
+                reverse=True,
+            )
+        ],
+        workload=(
+            WorkloadOut(
+                season=workload.season,
+                games_played=workload.games_played,
+                snaps_per_game=workload.snaps_per_game,
+                carries_per_game=workload.carries_per_game,
+                targets_per_game=workload.targets_per_game,
+                touches_per_game=workload.touches_per_game,
+            )
+            if workload
+            else None
+        ),
+        projected_points=player.projected_points,
+        market_adp=player.adp,
+        adp_stdev=player.adp_stdev,
+        projection_source=player.projection_source,
+        adp_source=player.adp_source,
+        is_demo=is_demo,
     )
 
 

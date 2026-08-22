@@ -6,7 +6,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum, unique
 
-from fhe.core.health.models import HealthAssessment
+from fhe.core.health.models import (
+    HealthAssessment,
+    InjuryHistoryEvent,
+    WorkloadSummary,
+)
 from fhe.core.types import Position
 
 
@@ -94,6 +98,10 @@ class DraftablePlayer:
     adp_source: str | None = None
 
     health: HealthAssessment | None = None
+    # Carried alongside the assessment so the player drawer can render a
+    # timeline and usage chart without a second round trip.
+    injury_history: tuple[InjuryHistoryEvent, ...] = field(default=())
+    workload: WorkloadSummary | None = None
     bye_week: int | None = None
     age: float | None = None
     years_experience: int | None = None

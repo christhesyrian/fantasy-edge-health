@@ -58,7 +58,7 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(LeagueConfigurationError)
     async def _bad_league(request: Request, exc: LeagueConfigurationError) -> JSONResponse:
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=_body(request, "invalid_league_configuration", str(exc)),
         )
 
@@ -74,14 +74,14 @@ def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def _domain(request: Request, exc: DomainError) -> JSONResponse:
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=_body(request, "domain_error", str(exc)),
         )
 
     @app.exception_handler(CsvImportError)
     async def _csv(request: Request, exc: CsvImportError) -> JSONResponse:
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=_body(request, "invalid_csv", str(exc)),
         )
 

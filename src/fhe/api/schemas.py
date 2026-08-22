@@ -98,6 +98,17 @@ class PlayerSummary(ApiModel):
     bye_week: int | None = None
 
 
+class WorkloadOut(ApiModel):
+    """Recent usage, which drives both exposure and durability signals."""
+
+    season: int | None = None
+    games_played: int | None = None
+    snaps_per_game: float | None = None
+    carries_per_game: float | None = None
+    targets_per_game: float | None = None
+    touches_per_game: float | None = None
+
+
 class PlayerDetail(PlayerSummary):
     """Full player record for the detail drawer."""
 
@@ -105,11 +116,18 @@ class PlayerDetail(PlayerSummary):
     height_inches: int | None = None
     weight_pounds: int | None = None
     college: str | None = None
-    identity_method: str
-    identity_confidence: float
+    identity_method: str | None = None
+    identity_confidence: float | None = None
     external_ids: dict[str, str] = Field(default_factory=dict)
     health: HealthOut | None = None
     injury_history: list[InjuryEventOut] = Field(default_factory=list)
+    workload: WorkloadOut | None = None
+    projected_points: float | None = None
+    market_adp: float | None = None
+    adp_stdev: float | None = None
+    projection_source: str | None = None
+    adp_source: str | None = None
+    is_demo: bool = False
 
 
 # ------------------------------------------------------------- draft scoring

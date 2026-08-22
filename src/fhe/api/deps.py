@@ -44,6 +44,17 @@ def get_demo_pool(request: Request) -> tuple[DraftablePlayer, ...]:
     return pool
 
 
+def get_session_factory(request: Request) -> async_sessionmaker[AsyncSession]:
+    """The application's session factory.
+
+    Ingestion jobs need this rather than a request-scoped session: run lineage
+    is written through its own session so a failed job still records that it
+    failed, even after its data transaction rolls back.
+    """
+    factory: async_sessionmaker[AsyncSession] = request.app.state.session_factory
+    return factory
+
+
 async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
     """A database session for the duration of a request.
 
@@ -67,3 +78,4 @@ EventBusDep = Annotated[EventBus, Depends(get_event_bus)]
 RegistryDep = Annotated[DraftSessionRegistry, Depends(get_registry)]
 DemoPoolDep = Annotated[tuple[DraftablePlayer, ...], Depends(get_demo_pool)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+SessionFactoryDep = Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)]

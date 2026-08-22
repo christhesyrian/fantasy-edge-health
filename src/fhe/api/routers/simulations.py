@@ -11,23 +11,26 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from typing import Annotated
 
 from fastapi import APIRouter, Query, Request, status
 from sse_starlette.sse import EventSourceResponse
 
 from fhe.api.deps import DemoPoolDep, RegistryDep
 from fhe.api.events import DraftEvent, EventType
-from fhe.api.mappers import pick_out
+from fhe.api.mappers import pick_out, player_detail
 from fhe.api.schemas import (
     AdvanceRequest,
     DraftBoardOut,
     DraftPickOut,
     PickRequest,
+    PlayerDetail,
     SimulationCreate,
     SimulationState,
 )
 from fhe.api.services.board_builder import DEFAULT_BOARD_DEPTH, build_board_payload
 from fhe.api.services.draft_session import DraftSession
+from fhe.core.errors import UnknownPlayerError
 from fhe.core.league import LeagueSettings
 from fhe.core.types import DraftType, ScoringFormat
 from fhe.observability import get_logger
@@ -127,6 +130,50 @@ async def get_board(
     session = registry.get(simulation_id)
     session.evaluate()
     return build_board_payload(session, depth=depth)
+
+
+@router.get(
+    "/{simulation_id}/players/{player_uuid}",
+    response_model=PlayerDetail,
+    summary="Player detail",
+)
+async def get_player(simulation_id: str, player_uuid: str, registry: RegistryDep) -> PlayerDetail:
+    """Everything the player drawer needs, without leaving draft context."""
+    session = registry.get(simulation_id)
+    player = session.players_by_uuid.get(player_uuid)
+    if player is None:
+        raise UnknownPlayerError(f"no player {player_uuid!r} in this draft pool")
+    return player_detail(player, is_demo=session.is_demo)
+
+
+@router.get(
+    "/{simulation_id}/compare",
+    response_model=list[PlayerDetail],
+    summary="Compare players",
+)
+async def compare_players(
+    simulation_id: str,
+    registry: RegistryDep,
+    player_uuid: Annotated[
+        list[str],
+        Query(
+            min_length=2,
+            max_length=4,
+            description="Two to four player ids to compare side by side.",
+        ),
+    ],
+) -> list[PlayerDetail]:
+    """Return full detail for several players at once.
+
+    Bounded to four because the comparison view renders columns, and because an
+    unbounded list would turn one request into an arbitrary amount of work.
+    """
+    session = registry.get(simulation_id)
+    players = session.players_by_uuid
+    missing = [uuid for uuid in player_uuid if uuid not in players]
+    if missing:
+        raise UnknownPlayerError(f"not in this draft pool: {', '.join(missing)}")
+    return [player_detail(players[uuid], is_demo=session.is_demo) for uuid in player_uuid]
 
 
 @router.post(
