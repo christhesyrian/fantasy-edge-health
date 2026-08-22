@@ -17,7 +17,7 @@ from fhe import __version__
 from fhe.api.errors import register_error_handlers
 from fhe.api.events import create_event_bus
 from fhe.api.middleware import RequestContextMiddleware
-from fhe.api.routers import diagnostics, health, imports, simulations
+from fhe.api.routers import diagnostics, health, imports, simulations, sleeper
 from fhe.api.services.draft_session import DraftSessionRegistry
 from fhe.config import Settings, get_settings
 from fhe.core.simulation import generate_player_pool
@@ -120,6 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(simulations.router, prefix=API_PREFIX)
     app.include_router(imports.router, prefix=API_PREFIX)
     app.include_router(diagnostics.router, prefix=API_PREFIX)
+    app.include_router(sleeper.router, prefix=API_PREFIX)
 
     return app
 

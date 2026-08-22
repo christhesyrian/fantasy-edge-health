@@ -94,7 +94,9 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "ARG001", "ARG002", "S105", "S106"]
+# S311: tests seed a deterministic RNG on purpose; SLF001: a few tests
+# drive one internal poll cycle rather than the whole run loop.
+"tests/**" = ["S101", "S105", "S106", "S311", "ARG001", "ARG002", "SLF001"]
 "scripts/**" = ["T20"]
 "src/fhe/cli.py" = ["T20"]
 
