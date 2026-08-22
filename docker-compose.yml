@@ -1,0 +1,129 @@
+# Local development stack.
+#
+#   docker compose up --build
+#
+# Brings up PostgreSQL, Redis, MinIO, the API, and the web app. The application
+# also runs with none of this — it falls back to SQLite and an in-process event
+# bus — but that fallback is for a quick demo, not for development against the
+# real storage engine.
+
+name: fantasy-health-edge
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: fhe
+      POSTGRES_PASSWORD: fhe
+      POSTGRES_DB: fhe
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # Dependants wait on this, so the API never starts against a database
+      # that is still initialising.
+      test: ["CMD-SHELL", "pg_isready -U fhe -d fhe"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      # Local development credentials only. Never reuse these anywhere real.
+      MINIO_ROOT_USER: fhe-local
+      MINIO_ROOT_PASSWORD: fhe-local-dev-secret
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  migrate:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      FHE_DATABASE_URL: postgresql+asyncpg://fhe:fhe@postgres:5432/fhe
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    command:
+      ["uvicorn", "fhe.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      FHE_ENV: development
+      FHE_LOG_FORMAT: json
+      FHE_DATABASE_URL: postgresql+asyncpg://fhe:fhe@postgres:5432/fhe
+      FHE_REDIS_URL: redis://redis:6379/0
+      FHE_CORS_ORIGINS: http://localhost:3000
+      FHE_S3_ENDPOINT_URL: http://minio:9000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - fhe-cache:/app/data/cache
+
+  worker:
+    build:
+      context: .
+      dockerfile: services/worker/Dockerfile
+    command: ["fhe", "ingest", "players"]
+    environment:
+      FHE_ENV: development
+      FHE_LOG_FORMAT: json
+      FHE_DATABASE_URL: postgresql+asyncpg://fhe:fhe@postgres:5432/fhe
+      FHE_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - fhe-cache:/app/data/cache
+    # Ingestion is a scheduled job, not a daemon: it runs, reports, and exits.
+    restart: "no"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres-data:
+  minio-data:
+  fhe-cache:

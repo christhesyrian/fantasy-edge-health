@@ -1,0 +1,54 @@
+# Pre-commit hooks.
+#
+#   ./.venv/bin/pip install pre-commit && ./.venv/bin/pre-commit install
+#
+# Deliberately fast and deterministic: anything slow enough to make a developer
+# reach for --no-verify belongs in CI instead. Type checking and the test suite
+# are therefore not here.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^apps/web/tsconfig\.json$   # allows comments
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: detect-private-key
+      - id: no-commit-to-branch
+        args: [--branch, main]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+
+  - repo: local
+    hooks:
+      - id: no-env-files
+        name: refuse to commit a .env file
+        entry: >-
+          bash -c 'if git diff --cached --name-only | grep -E "(^|/)\.env$|(^|/)\.env\.[^e]"; then
+          echo "Refusing: .env files must never be committed."; exit 1; fi'
+        language: system
+        pass_filenames: false
+
+      - id: no-gpl-crosswalk
+        name: refuse to commit the GPL player crosswalk
+        entry: >-
+          bash -c 'if git diff --cached --name-only | grep -E "db_playerids\.csv"; then
+          echo "Refusing: db_playerids.csv is GPL-3.0 and must stay in the runtime cache."; exit 1; fi'
+        language: system
+        pass_filenames: false
