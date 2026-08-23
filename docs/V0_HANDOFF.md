@@ -429,6 +429,19 @@ decoration that does not work.
 `apps/web/package-lock.json` and run `next build`. If it mentions Python, pip,
 or an ASGI entrypoint, the root directory did not take.
 
+**The build compiles and type-checks, then fails at "Generating static
+pages"**
+
+Check `next.config.ts` for `output: "standalone"`. That setting is for the
+container image — the Dockerfile copies `.next/standalone` — and a managed
+platform builds its own output format instead, applying its own config on top.
+It is now opt-in through `NEXT_OUTPUT_STANDALONE=1`, which only the Dockerfile
+sets, so a platform build never sees it.
+
+If a future change turns it back on unconditionally, this is the failure it
+produces: compile and TypeScript both pass, and the build dies during
+prerender.
+
 **"Cannot find module '../lightningcss.linux-x64-gnu.node'"** (or the same for
 `@tailwindcss/oxide`)
 

@@ -16,6 +16,9 @@ COPY apps/web ./
 # bundle, so this must be the URL the browser will actually call.
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 ENV NEXT_PUBLIC_API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL
+# Ask for standalone output explicitly; next.config.ts leaves it off otherwise
+# so a managed platform builds its own output format instead.
+ENV NEXT_OUTPUT_STANDALONE=1
 RUN npm run build
 
 FROM node:22-alpine AS runtime
