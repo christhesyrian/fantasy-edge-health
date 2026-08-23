@@ -4,8 +4,8 @@
 decisions and their reasoning, the bugs already found, and the ordered backlog —
 so none of it has to be re-derived.
 
-- **Last updated:** 2026-08-23
-- **Branch:** `master`, 15 commits, working tree clean
+- **Last updated:** 2026-08-23 (pre-v0 stabilisation pass)
+- **Branch:** `master`, working tree clean
 - **Governing spec:** [`docs/MASTER_BUILD_DIRECTIVE.md`](docs/MASTER_BUILD_DIRECTIVE.md)
 
 ---
@@ -15,8 +15,9 @@ so none of it has to be re-derived.
 > **Claude takes no credit for the code.**
 
 No `Co-Authored-By` trailers, no "generated with" footers, no AI attribution in
-source or docs. Every commit so far follows this. `CLAUDE.md` and `.claude/` are
-functional tooling config, not credit.
+source or docs. Every commit so far follows this. `CLAUDE.md` is functional
+project config, not credit; `.claude/` is local agent tooling and is no longer
+tracked in git, so it does not appear on GitHub.
 
 ---
 
@@ -26,8 +27,10 @@ functional tooling config, not credit.
 make quality        # format, lint, mypy, pytest, then the frontend gates
 ```
 
-Expected: **459 Python tests**, **33 frontend tests**, ruff clean, `mypy --strict`
-clean across 109 files, eslint clean, `tsc` clean.
+Expected: **534 Python tests**, **55 frontend tests**, ruff clean,
+`mypy --strict` clean across 128 files, eslint clean, `tsc` clean. Plus
+**23 Playwright end-to-end tests** — `npm run e2e` (12, against a real API) and
+`npm run e2e:preview` (11, against offline preview mode with no API at all).
 
 See it run:
 
@@ -38,6 +41,9 @@ make dev-web        # terminal two → http://localhost:3000
 
 Or headless: `./.venv/bin/python -m fhe.cli simulate --seed 42`
 
+Frontend only, no Python:
+`cd apps/web && NEXT_PUBLIC_PREVIEW_MODE=fixtures npm run dev`
+
 ---
 
 ## 2. Environment (verified, do not re-derive)
@@ -47,7 +53,7 @@ Or headless: `./.venv/bin/python -m fhe.cli simulate --seed 42`
 | Python | **3.14.3** at `/opt/homebrew/bin/python3.14`. Bare `python3` is Anaconda **3.9** — never use it. |
 | venv | `./.venv`. **Always invoke `./.venv/bin/python`.** |
 | Node | v25.6.0, npm 11.12.0. No pnpm. npm workspaces from the repo root. |
-| Docker | Installed; **daemon was not running**. Compose is untested here as a result. |
+| Docker | Installed; **daemon has never run on this machine**. Compose remains completely unverified. |
 | Postgres / Redis | Not installed natively — hence the fallbacks. |
 
 ---
@@ -92,15 +98,18 @@ src/fhe/
 │   └── ingest/      run lineage, sleeper_players, nflverse_injuries, csv_import
 ├── db/              base, session, upsert, models/ (26 tables)
 ├── api/             app, deps, errors, middleware, events (SSE), mappers,
-│                    services/, routers/ (health, simulations, imports,
-│                    diagnostics, sleeper)
-└── worker/          draft_poller.py
+│                    services/ (draft_session, board_builder, player_pool,
+│                    league_connect, poller_manager, session_recovery),
+│                    routers/ (health, drafts, simulations, leagues, players,
+│                    imports, diagnostics, sleeper)
+├── worker/          draft_poller.py
+├── preview/         capture.py — records real API output for the frontend
+└── loadtest/        runner.py — read-path load and soak harness
 
 apps/web/            Next.js 16 war room — see §7
 alembic/             initial revision, drift test
-.claude/             4 agents, 4 skills
-.github/workflows/   4-job CI
-docs/                9 documents + 6 ADRs
+.github/workflows/   5-job CI (python, web, integration, security, docker)
+docs/                14 documents + 6 ADRs
 ```
 
 ### Bugs already found and fixed — do not reintroduce
@@ -134,18 +143,63 @@ Each has a regression test named after the symptom.
     draft ended early, so the provider's own status now wins.
 14. `@unique` enum crash from a duplicate alias; `cached_property` incompatible
     with `slots=True`; `user_draft_slot=None` could not express "no human seat".
+15. **Sub-replacement players were ordered worst-first.** The value component
+    clamped at zero, so everyone below replacement tied on the heaviest term and
+    the ADP term — which rewards falling — decided their order. A quarterback
+    124 points below the QB12 baseline outranked QB1. Now signed, `[-1, 1]`.
+16. **Session recovery turned a 404 into a 500.** The recovery lookup queried a
+    `drafts` table that does not exist on a fresh SQLite file, which is exactly
+    the zero-infrastructure demo path — so every unknown draft id returned a
+    server error. Recovery is best-effort and now degrades to "no such session",
+    logging the cause.
+17. **Preview fixtures ignored the requested pick count.** `advance(1)` walked
+    all the way to the user's turn instead of stepping one pick, so preview did
+    not match the endpoint it was standing in for.
 
 ---
 
 ## 5. What is NOT built — resume here
 
 ### Next
+- **Docker Compose verification** — still never run; the daemon has never been
+  available. This is the only part of the repository that has never executed.
+- **Dedicated rankings and health-centre pages.** `GET /api/v1/players` and
+  `GET /api/v1/players/{uuid}` were added for exactly this and are tested; the
+  routes themselves are deliberately left to the frontend pass.
+- **Cache the evaluated board between picks.** Measured: board evaluation is
+  synchronous CPU work on the event loop, so `/health` latency climbs from
+  1.6 ms to 291 ms as concurrency goes 1 → 50. Fine at real load; see
+  `docs/PERFORMANCE.md` §7.
+- **Light-mode contrast audit** and an automated a11y check in CI.
+- **Multi-worker support** — needs shared poller ownership, not just the shared
+  event bus that already exists. `docs/DEPLOYMENT.md` §7.
 - **Serving path for the learned model**, if it is ever promoted: a model
   registry, versioned artefacts, and drift monitoring. `docs/MODEL_CARD.md`
-  records why the model passes its bar and is still not in production.
-- **Docker Compose verification** — never run, because the daemon was down
+  records why the model is deliberately not in production.
 
 ### Done since the last handoff
+
+**Pre-v0 stabilisation pass**
+- **Live draft session recovery.** An API restart mid-draft no longer costs the
+  war room. A read of a draft whose in-memory session is gone rebuilds it from
+  the persisted league and draft rows plus the provider's current picks, and
+  restarts the poller. Recovery reuses the *same* connect path, so it cannot
+  diverge from a fresh connection. 11 regression tests.
+- **Offline preview mode for the frontend** (`NEXT_PUBLIC_PREVIEW_MODE=fixtures`).
+  Replays real API responses recorded by `fhe preview capture`. Labelled
+  synthetic, never reports a live connection, refuses what it cannot replay.
+  11 Playwright tests run it with the API URL pointed at a dead port.
+- **Environment split.** `apps/web/.env.example` holds only what the Next.js app
+  reads, so a frontend deployment is never asked for a database URL.
+- **Load and soak testing** (`fhe loadtest`) with measured results in
+  `docs/PERFORMANCE.md`.
+- **New docs:** `V0_HANDOFF.md`, `DEPLOYMENT.md`, `PERFORMANCE.md`,
+  `PRE_V0_AUDIT.md`.
+- `GET /api/v1/players` and `/players/{uuid}` — draft-independent reads.
+- Documentation synchronised with the code; see `docs/PRE_V0_AUDIT.md` §4 for
+  the list of claims that were stale.
+
+**Earlier**
 - Command palette (Cmd/Ctrl+K), favourites, and a light/system theme toggle,
   closing directive §22 and §10. Selecting a player now reveals its row.
 - **Engine fix — sub-replacement players are scored on a signed scale.** The
@@ -179,6 +233,11 @@ WebSockets, and the static VORP baseline. Read those before changing any of them
 - **Risk is encoded three ways** — glyph, word, colour. Keep it that way.
 - **The board is always read from the server.** Events trigger a refetch; they
   never patch local state.
+- **Preview mode** (`src/lib/preview/`) swaps the API client for one that
+  replays `recorded.json`. Re-record with `fhe preview capture` after any schema
+  change, or preview fails zod validation — which is the point.
+- The full frontend contract, boundaries, and v0 import instructions are in
+  [`docs/V0_HANDOFF.md`](docs/V0_HANDOFF.md).
 - SSE is tested against a real uvicorn server. httpx's `ASGITransport` never
   sends `http.disconnect`, so a streaming response never completes under it.
 

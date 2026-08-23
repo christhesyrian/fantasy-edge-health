@@ -74,6 +74,16 @@ No browser needed at all:
 ./.venv/bin/python -m fhe.cli simulate --seed 42
 ```
 
+Frontend only, with no Python at all — for UI work and cloud previews:
+
+```bash
+cd apps/web && NEXT_PUBLIC_PREVIEW_MODE=fixtures npm run dev
+```
+
+That replays recorded engine output, labelled `PREVIEW · SYNTHETIC FIXTURES`
+and never reporting a live connection. See
+[`docs/V0_HANDOFF.md`](docs/V0_HANDOFF.md).
+
 ---
 
 ## Features
@@ -82,7 +92,7 @@ No browser needed at all:
 Connect a Sleeper draft, or run a seeded mock. Picks arrive over server-sent
 events; drafted players leave the board, rosters fill, scarcity shifts, and
 recommendations recompute in single-digit milliseconds. Connection state is
-always visible as `LIVE`, `RECONNECTING`, or `STALE`.
+always visible as `LIVE`, `RECONNECTING`, `STALE`, or `DISCONNECTED`.
 
 ### Availability risk
 Every player carries a 0–100 risk score built from injury designation, practice
@@ -166,6 +176,9 @@ make test          # everything
 make test-py       # Python
 make test-web      # frontend
 make test-live     # opt-in, hits real providers
+
+npm run e2e            # Playwright against a real API and web server
+npm run e2e:preview    # Playwright against offline preview mode, no API at all
 ```
 
 The default suite never touches the network. Provider behaviour is pinned by
@@ -210,6 +223,10 @@ ROC-AUC alone repeats the same mistake.
 | [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md) | Schema and why it is shaped that way |
 | [`docs/DRAFT_ENGINE.md`](docs/DRAFT_ENGINE.md) | The recommendation mathematics |
 | [`docs/INJURY_MODEL.md`](docs/INJURY_MODEL.md) | Health features and limitations |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Production topology, environment, rollout, rollback |
+| [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md) | Load and soak results, with the limits they establish |
+| [`docs/V0_HANDOFF.md`](docs/V0_HANDOFF.md) | Frontend handoff: contract, boundaries, preview mode |
+| [`docs/PRE_V0_AUDIT.md`](docs/PRE_V0_AUDIT.md) | Requirement-by-requirement audit against the code |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Operating it, including on draft night |
 | [`docs/SECURITY.md`](docs/SECURITY.md) | Threat model and decisions |
 | [`docs/INTERVIEW_GUIDE.md`](docs/INTERVIEW_GUIDE.md) | Design decisions and trade-offs |
@@ -226,20 +243,32 @@ than one that names them:
   reasoned, not fitted. That is why it is labelled heuristic.
 - **Demo data is synthetic.** Realistic in shape, invented in substance, and
   labelled as such everywhere it appears.
-- **Draft sessions live in memory.** They do not survive an API restart and do
-  not span processes. Redis is required before running more than one.
+- **Draft sessions live in memory, but live drafts recover.** A connected
+  Sleeper draft is rebuilt on demand from the persisted league, the provider's
+  current picks, and the deterministic engine, so an API restart mid-draft costs
+  one slow request rather than the war room. Mock simulations are ephemeral by
+  design. Running more than one API worker is not supported: sessions and
+  pollers are per-process.
 - **Survival probability assumes a normal draft-position distribution.** Real
   distributions are right-skewed; the model re-anchors fallers to compensate,
   which is a correction, not a fix.
 - **No ADP or projections ship with the product.** Bring your own by CSV.
+- **The Docker Compose stack is unverified.** It is written and has never been
+  run, because the daemon has not been available on the development machine.
+- **Performance is measured against SQLite only**, for the same reason.
 
 ## Roadmap
 
-1. Persist live Sleeper drafts and wire the poller into the war room UI
-2. Weekly stats and snap-count ingestion for workload features
-3. Validated availability model with a calibration report and model card
-4. Playwright end-to-end coverage of the full demo path
-5. Command palette, favourites, and saved league configurations
+Everything on the original roadmap is done. What is actually next, in order:
+
+1. Verify the Docker Compose stack — written, never run, because the daemon has
+   not been available (see [`USER_ACTION_REQUIRED.md`](USER_ACTION_REQUIRED.md))
+2. Dedicated rankings and health-centre pages — the API already serves them
+   through `/api/v1/players`, so this is UI work
+3. Cache the evaluated board between picks; board evaluation currently blocks
+   the event loop under concurrency ([`docs/PERFORMANCE.md`](docs/PERFORMANCE.md))
+4. Light-mode contrast audit and an automated accessibility check in CI
+5. Multi-worker support: shared poller ownership, not just a shared event bus
 
 ## License
 

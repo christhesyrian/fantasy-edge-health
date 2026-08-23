@@ -8,10 +8,10 @@ done: implemented, formatted, linted, type-checked, tested, documented.
 
 | Phase | State | Notes |
 | --- | --- | --- |
-| 0 — Research & architecture | **Done** | Providers verified live; ADRs written; Claude agents and skills in place. |
+| 0 — Research & architecture | **Done** | Providers verified live; ADRs written; local agent tooling in place (kept out of the repository). |
 | 1 — Repository foundation | **Done** | Monorepo, config, logging, metrics, 26-table schema, Alembic with a drift test, Docker, CI, Makefile. |
 | 2 — Player data | **Done** | Identity resolution measured at 100% of the top 200; Sleeper sync writes players, external ids, health, and conflicts. |
-| 3 — Historical data | **Partial** | Injury and practice ingestion done for 2009–2025. Missing: weekly stats and snap counts. |
+| 3 — Historical data | **Done** | Injury and practice ingestion for 2009–2025, plus weekly stats and snap counts, so the health model's workload terms are measured rather than absent. |
 | 4 — Health intelligence | **Done** | Taxonomy, heuristic scorer, API, and the war-room drawer with timeline and limitations. |
 | 5 — Rankings | **Done** | VORP, scarcity, tiers, risk adjustment, CSV import for ADP and projections, rankings surfaced in the board. |
 | 6 — Draft engine | **Done** | Engine, survival model, deterministic explanations, board assembly, exposed over HTTP. |
@@ -19,14 +19,17 @@ done: implemented, formatted, linted, type-checked, tested, documented.
 | 8 — Sleeper live draft | **Done** | Connect, DB-backed player pool, supervised poller, and one `/drafts/{id}` API serving live and simulated drafts identically. |
 | 9 — ML | **Done** | Point-in-time dataset, seven-check leakage audit, baselines, temporal evaluation, calibration. The verdict is honest and negative: not promoted. See `docs/MODEL_CARD.md`. |
 | 10 — Product polish | **Done** | Comparison, alerts, keyboard shortcuts, accessibility, reduced motion, command palette, favourites, light/system theme. |
-| 11 — Production readiness | **Partial** | Full suite, CI, security scanning, observability, documentation, container images, twelve Playwright end-to-end tests. Missing: load testing and a verified Compose run (the Docker daemon has been down on this machine). |
+| 11 — Production readiness | **Partial** | Full suite, CI, security scanning, observability, documentation, container images, 23 Playwright end-to-end tests, load and soak testing with measured results, a deployment architecture, and live-session recovery across restarts. Missing: a verified Compose run — the Docker daemon has never been available on this machine. |
 
 ## Quality gates
 
-Current on `master`: **515 Python tests**, **55 frontend tests**, and **12
-Playwright end-to-end tests** pass. `ruff check` and `ruff format --check`
-clean, `mypy --strict` clean across 118 files, eslint and `tsc` clean,
-production build succeeds.
+Current on `master`: **534 Python tests**, **55 frontend tests**, and **23
+Playwright end-to-end tests** (12 live-path, 11 offline-preview) pass.
+`ruff check` and `ruff format --check` clean, `mypy --strict` clean across
+128 files, eslint and `tsc` clean, production build succeeds.
+
+A requirement-by-requirement audit against the code, rather than against this
+file, is in [`docs/PRE_V0_AUDIT.md`](docs/PRE_V0_AUDIT.md).
 
 ## Log
 
