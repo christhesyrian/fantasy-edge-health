@@ -82,6 +82,31 @@ class Settings(BaseSettings):
         "https://raw.githubusercontent.com/dynastyprocess/data/master/files/db_playerids.csv"
     )
 
+    # ---- FantasyPros (optional, licensed) ----------------------------------
+    # Verified against the published OpenAPI spec at
+    # https://api.fantasypros.com/public/v2/docs/fantasypros_v2_public.yml on
+    # 2026-08-23: base URL, `x-api-key` header, and the two endpoints used.
+    #
+    # The key is personal and its terms are strict, so the limits below are the
+    # provider's own, not guesses. `repr=False` keeps it out of tracebacks and
+    # logged settings dumps.
+    fantasypros_api_key: str = Field(default="", repr=False)
+    fantasypros_base_url: str = "https://api.fantasypros.com/public/v2/json"
+    fantasypros_timeout_seconds: float = 20.0
+    # "Your API key will allow you to make one API call per second and up to
+    # 100 API calls per day." Both are enforced; the daily count is persisted
+    # so a restart cannot reset it and quietly exceed the licence.
+    fantasypros_max_calls_per_day: int = 100
+    fantasypros_min_seconds_between_calls: float = 1.0
+    # "You should take steps to cache data on your end so that your application
+    # does not poll our APIs unnecessarily." Projections move at most daily.
+    fantasypros_cache_hours: float = 12.0
+
+    @property
+    def fantasypros_enabled(self) -> bool:
+        """Whether a key is configured. Absent, the adapter stays disabled."""
+        return bool(self.fantasypros_api_key.strip())
+
     # ---- optional LLM assistant (product is fully usable without it) -------
     anthropic_api_key: str = Field(default="", repr=False)
 

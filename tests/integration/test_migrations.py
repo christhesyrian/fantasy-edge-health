@@ -33,10 +33,21 @@ REPO_ROOT = Path(__file__).parents[2]
 IGNORED_DIFF_TYPES: frozenset[str] = frozenset()
 
 
+# Environment this test must control rather than inherit. `FHE_DATABASE_URL` is
+# the load-bearing one: a developer with a real Postgres URL in their .env would
+# otherwise have these tests run against it, build an async engine in a sync
+# context, and fail with an unrelated greenlet error. The test owns its
+# database, so it states that explicitly.
+_PINNED_ENV: tuple[str, ...] = ("FHE_DATA_DIR", "FHE_DATABASE_URL")
+
+
 def _upgraded_engine(tmp_path: Path) -> Any:
     """Apply every migration to a fresh database and return a sync engine."""
-    previous = os.environ.get("FHE_DATA_DIR")
+    previous = {name: os.environ.get(name) for name in _PINNED_ENV}
     os.environ["FHE_DATA_DIR"] = str(tmp_path)
+    # Empty, not absent: this forces the SQLite fallback into tmp_path whatever
+    # the developer's .env says.
+    os.environ["FHE_DATABASE_URL"] = ""
     get_settings.cache_clear()
     try:
         config = Config(str(REPO_ROOT / "alembic.ini"))
@@ -44,10 +55,12 @@ def _upgraded_engine(tmp_path: Path) -> Any:
         url = get_settings().sqlalchemy_url.replace("+aiosqlite", "")
         return create_engine(url)
     finally:
-        if previous is None:
-            os.environ.pop("FHE_DATA_DIR", None)
-        else:
-            os.environ["FHE_DATA_DIR"] = previous
+        for name, value in previous.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+        get_settings.cache_clear()
         get_settings.cache_clear()
 
 

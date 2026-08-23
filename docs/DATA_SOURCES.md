@@ -14,6 +14,82 @@ detectable.
 
 ---
 
+## FantasyPros
+
+**Licensed, not public.** This is the only source here with terms that restrict
+what may be stored and how often it may be called, so those terms are
+implemented in code rather than left to whoever runs it to remember.
+
+| | |
+| --- | --- |
+| **Purpose** | Season projections and consensus ADP — the two inputs the engine cannot derive and will not invent. |
+| **Docs** | <https://api.fantasypros.com/public/v2/docs> (spec: `docs/fantasypros_v2_public.yml`) |
+| **Base URL** | `https://api.fantasypros.com/public/v2/json` |
+| **Auth** | **API key**, sent as the `x-api-key` header. Personal, and must be kept confidential. |
+| **Adapter** | [`src/fhe/data/providers/fantasypros.py`](../src/fhe/data/providers/fantasypros.py) |
+| **CSV converter** | [`src/fhe/data/ingest/fantasypros_csv.py`](../src/fhe/data/ingest/fantasypros_csv.py) |
+| **Verified** | 2026-08-23, against the published OpenAPI spec |
+
+### Endpoints used, and one deliberately not used
+
+| Operation | Path |
+| --- | --- |
+| Season projections | `GET /nfl/{season}/projections?position=&scoring=` |
+| Consensus ADP | `GET /nfl/{season}/consensus-rankings?position=&type=ADP&scoring=` |
+| ~~Historical points~~ | `GET /nfl/{season}/player-points` — **not implemented on purpose** |
+
+The Terms of Use state the licence does **not** cover "Data that constitutes
+historical player statistics", and require that any such data received be
+deleted promptly. The simplest way to honour that is never to request it:
+`player-points` has no client method, and no historical statistic from this
+provider is stored anywhere. Workload history continues to come from nflverse,
+which is public data under its own licence.
+
+### Terms enforced in code
+
+| Term | Where |
+| --- | --- |
+| "one API call per second" | `fantasypros_min_seconds_between_calls`, measured from the previous call. |
+| "up to 100 API calls per day" | `_DailyBudget`, **persisted to disk** so a restart cannot silently reset the count and take the account over its licence. |
+| "cache data on your end" | Every response cached for `fantasypros_cache_hours` (12h). A cached read is checked *before* the quota, so cached data keeps working once the day's calls are spent. |
+| "keep your API key strictly confidential" | Read from `FHE_FANTASYPROS_API_KEY`, `repr=False` on the setting, never logged, never written to cache, never in an error message. |
+| Attribution | Every imported value is stamped `FantasyPros`, which the war room displays beside the number. |
+| Personal, non-commercial | See the note below. |
+
+### Two things a reader should know
+
+**The `stats` object shape is not in the published spec.** The projections
+endpoint returns a per-player `stats` object that the OpenAPI document does not
+describe. The adapter therefore looks for the fantasy-points value under several
+known names and, finding none, records the projection as **unknown** rather than
+guessing a number. That follows the rule that missing data lowers confidence and
+never invents value.
+
+**Non-commercial and non-compete.** The licence grants use of the Data "for
+personal, non-commercial purposes only", and separately forbids using it to
+build anything competing with a FantasyPros product. A personal draft assistant
+run locally sits inside that grant. Publishing this application to others with
+FantasyPros data in it would not, and no FantasyPros data is committed to this
+repository.
+
+### The CSV path
+
+The converter exists because the API is not the only way in, and a rate-limited
+key is a poor fit for iterating on a draft board. Export projections or rankings
+from FantasyPros yourself, then:
+
+```bash
+./.venv/bin/python -m fhe.cli convert fantasypros --kind projections \
+  --in ~/Downloads/FantasyPros_Projections.csv --out data/imports/projections.csv
+```
+
+Column headings differ between their exports and change over time, so the
+converter matches by alias and **reports which source column filled each field**.
+When a required column cannot be found it lists every heading present, so the
+fix is one glance rather than a guess.
+
+---
+
 ## Sleeper
 
 | | |

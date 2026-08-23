@@ -305,6 +305,37 @@ async def _seed(settings: Settings) -> int:
     return 0
 
 
+def _convert_fantasypros(kind: str, source_path: Path, dest_path: Path) -> int:
+    """Convert a FantasyPros export into the project's import schema."""
+    from fhe.data.ingest.fantasypros_csv import (
+        ConversionError,
+        convert_adp,
+        convert_projections,
+    )
+
+    try:
+        text = source_path.read_text(encoding="utf-8-sig")
+    except OSError as error:
+        print(f"cannot read {source_path}: {error}")
+        return 1
+
+    convert = convert_projections if kind == "projections" else convert_adp
+    try:
+        converted, report = convert(text)
+    except ConversionError as error:
+        print(f"Could not convert {source_path}:\n  {error}")
+        return 1
+
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    dest_path.write_text(converted, encoding="utf-8")
+    print(report.render())
+    print(f"\nwrote {dest_path}")
+    if report.rows_written == 0:
+        print("Nothing was written — check the column mapping above.")
+        return 1
+    return 0
+
+
 async def _loadtest(base_url: str, concurrency: int, duration: float, draft_id: str | None) -> int:
     """Run the read-path load test against a live API."""
     import httpx
@@ -413,6 +444,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Where to write the recording",
     )
 
+    convert = subcommands.add_parser(
+        "convert", help="Convert a provider's CSV export into the import schema"
+    )
+    convert_sub = convert.add_subparsers(dest="convert_source", required=True)
+    fp_csv = convert_sub.add_parser(
+        "fantasypros", help="Convert a FantasyPros CSV export you downloaded yourself"
+    )
+    fp_csv.add_argument("--kind", choices=["projections", "adp"], required=True)
+    fp_csv.add_argument("--in", dest="source_path", type=Path, required=True)
+    fp_csv.add_argument("--out", dest="dest_path", type=Path, required=True)
+
     loadtest = subcommands.add_parser(
         "loadtest", help="Drive concurrent reads against a running API"
     )
@@ -463,6 +505,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return asyncio.run(_ingest_injuries(settings, args.seasons))
     if args.command == "simulate":
         return _simulate(args.seed, args.rounds, args.slot, args.teams)
+    if args.command == "convert":
+        return _convert_fantasypros(args.kind, args.source_path, args.dest_path)
     if args.command == "loadtest":
         return asyncio.run(_loadtest(args.base_url, args.concurrency, args.duration, args.draft_id))
     if args.command == "preview":
