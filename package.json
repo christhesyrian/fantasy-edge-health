@@ -13,6 +13,7 @@
     "lint": "npm run lint --workspace=web",
     "typecheck": "npm run typecheck --workspace=web",
     "test": "npm run test --workspace=web",
+    "e2e": "npm run e2e --workspace=web",
     "format": "npm run format --workspace=web",
     "format:check": "npm run format:check --workspace=web"
   },

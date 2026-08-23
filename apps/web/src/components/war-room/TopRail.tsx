@@ -20,11 +20,21 @@ const CONNECTION_STYLE: Record<ConnectionState, { dot: string; label: string }> 
   },
 };
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+function Stat({
+  label,
+  value,
+  testId,
+}: {
+  label: string;
+  value: React.ReactNode;
+  testId?: string;
+}) {
   return (
     <div className="flex flex-col gap-0.5">
       <span className="rail-label">{label}</span>
-      <span className="tabular text-sm text-[var(--text-primary)]">{value}</span>
+      <span data-testid={testId} className="tabular text-sm text-[var(--text-primary)]">
+        {value}
+      </span>
     </div>
   );
 }
@@ -81,6 +91,7 @@ export function TopRail({
         <Stat label="Format" value={`${league.draft_type} · ${league.rounds}rd`} />
         <Stat
           label="Pick"
+          testId="current-pick"
           value={
             board.current_pick
               ? `${board.current_pick} · R${board.current_round}`
@@ -110,7 +121,9 @@ export function TopRail({
           <span className="rail-label">Feed</span>
           <span className={cn("flex items-center gap-1.5 text-sm", style.label)}>
             <span className={cn("h-2 w-2 rounded-full", style.dot)} aria-hidden />
-            <span className="display text-[0.8rem]">{connection}</span>
+            <span data-testid="connection-state" className="display text-[0.8rem]">
+              {connection}
+            </span>
             <span className="tabular text-[0.6875rem] text-[var(--text-muted)]">
               {lastEventAt ? since(new Date(lastEventAt).toISOString()) : "—"}
             </span>

@@ -25,6 +25,9 @@ export function Panel({
 }) {
   return (
     <section
+      // A stable hook for end-to-end tests. Panel titles are short and
+      // repeated elsewhere on screen, so matching them as text is ambiguous.
+      data-testid={`panel-${title.toLowerCase().replace(/\s+/g, "-")}`}
       className={cn(
         "flex min-h-0 flex-col border bg-[var(--surface-panel)]",
         accent && "border-[var(--hairline-bright)]",

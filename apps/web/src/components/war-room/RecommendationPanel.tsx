@@ -76,6 +76,7 @@ export function RecommendationPanel({
             </span>
             <button
               type="button"
+              data-testid="hero-player"
               onClick={() => onInspect(pick.player_uuid)}
               className="mt-1 block truncate text-left"
             >
