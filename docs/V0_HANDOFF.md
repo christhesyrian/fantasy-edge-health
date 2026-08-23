@@ -338,7 +338,10 @@ Python.
    `https://github.com/<your-org>/fantasy-edge-health` (or pick it from the
    account dropdown).
 2. **Base branch**: `master`.
-3. **Root directory**: **`apps/web`** ← this is the important one.
+3. **Root directory**: **`apps/web`** ← this is the important one. Get this
+   wrong and the build fails with a *FastAPI entrypoint* error, because Vercel
+   finds `pyproject.toml` at the repository root and tries to deploy the Python
+   backend. See "Troubleshooting the import" below.
 4. **Environment variables**: see the table below.
 5. **Preview**: v0 builds and serves the Next.js app.
 
@@ -397,6 +400,44 @@ With `NEXT_PUBLIC_PREVIEW_MODE=fixtures`:
 - "Draft now" explains why it is unavailable instead of failing.
 - After 12 picks the recording ends and says so. Reset starts it again.
 
+### Troubleshooting the import
+
+**"No FastAPI entrypoint found in default locations… Add this to your
+pyproject.toml: `[tool.vercel] entrypoint = "src.fhe.api.app:app"`"**
+
+The root directory is set to the repository root instead of `apps/web`. Vercel
+found `pyproject.toml` at the root, decided this is a Python project, and tried
+to deploy the FastAPI backend.
+
+**Do not follow that suggestion.** Adding `[tool.vercel] entrypoint` tells
+Vercel to go ahead and deploy the API, which is wrong twice over: it is not the
+thing being worked on, and the API cannot run correctly on Vercel at all. It
+holds server-sent event connections open for the length of a draft and runs a
+background polling loop between requests, and a request-scoped serverless
+runtime kills both. The result would be a war room that connects, reports
+healthy, and silently stops updating. See [`DEPLOYMENT.md`](DEPLOYMENT.md) §3.
+
+**The fix is a project setting, not a file.** In the Vercel project:
+Settings → Build and Deployment → Root Directory → set to `apps/web` → redeploy.
+During Git Import it is the "root directory for monorepos" field.
+
+There is deliberately no `vercel.json` pinning this. Root Directory is a project
+setting that repository config cannot override, so a committed file would be a
+decoration that does not work.
+
+**How to tell it is fixed:** the build log should install from
+`apps/web/package-lock.json` and run `next build`. If it mentions Python, pip,
+or an ASGI entrypoint, the root directory did not take.
+
+**"npm ci … EUSAGE … Missing: @playwright/test from lock file"**
+
+`apps/web/package-lock.json` is out of sync with its `package.json`. This
+happens whenever someone runs `npm install` from inside the repository, because
+npm workspaces walks up and writes the *root* lockfile instead. Regenerate the
+frontend's own lockfile in isolation — copy `apps/web/package.json` to an empty
+directory, run `npm install --package-lock-only` there, and copy the lockfile
+back.
+
 ### Commands to run after making changes
 
 From `apps/web`:
@@ -417,7 +458,7 @@ npm run e2e
 
 | Question | Answer |
 | --- | --- |
-| v0 import root | `apps/web` |
+| v0 import root | `apps/web` — **not** the repository root, or Vercel builds the Python backend |
 | Branch | `master` |
 | Env vars for preview | `NEXT_PUBLIC_PREVIEW_MODE=fixtures` (only) |
 | Env vars for live | `NEXT_PUBLIC_API_BASE_URL=https://…` |
