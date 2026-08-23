@@ -194,7 +194,13 @@ export function BestAvailable({
                       : "hover:bg-[color-mix(in_oklab,var(--accent)_7%,transparent)]",
                   )}
                 >
-                  <td className="tabular px-1.5 py-1.5 text-right text-[var(--text-secondary)]">
+                  <td
+                    className={cn(
+                      "tabular px-1.5 py-1.5 text-right text-[var(--text-secondary)]",
+                      isSelected &&
+                        "text-[var(--accent)] shadow-[inset_3px_0_0_0_var(--accent)]",
+                    )}
+                  >
                     {row.model_rank}
                   </td>
                   <td className="px-1.5 py-1.5">
