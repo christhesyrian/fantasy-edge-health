@@ -13,7 +13,8 @@ NPM    ?= npm
 
 .DEFAULT_GOAL := help
 .PHONY: help setup dev dev-api dev-web test test-py test-web test-live lint format \
-        typecheck quality quality-data migrate migration seed ingest simulate build \
+        typecheck quality quality-data ml-evaluate migrate migration seed ingest \
+        simulate build \
         clean up down logs
 
 help: ## Show this help
@@ -75,6 +76,9 @@ ingest: ## Sync players, then backfill injuries and workload
 	$(PYTHON) -m fhe.cli ingest players
 	$(PYTHON) -m fhe.cli ingest injuries --seasons 2023,2024,2025
 	$(PYTHON) -m fhe.cli ingest workload --seasons 2024,2025
+
+ml-evaluate: ## Build the ML dataset, audit for leakage, and evaluate models
+	$(PYTHON) -m fhe.cli ml evaluate
 
 quality-data: ## Run data-quality checks against the database
 	$(PYTHON) -m fhe.cli quality

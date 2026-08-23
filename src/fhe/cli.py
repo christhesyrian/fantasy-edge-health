@@ -178,6 +178,55 @@ async def _quality(settings: Settings) -> int:
     return 1 if blocking else 0
 
 
+async def _ml_evaluate(settings: Settings, seasons: Sequence[int], holdout: Sequence[int]) -> int:
+    """Build the training set, audit it, and evaluate candidate models.
+
+    Prints evidence. Promotes nothing: that decision is a human one taken
+    against the bar in ``docs/MODEL_CARD.md``.
+    """
+    from fhe.db import create_engine, create_session_factory
+    from fhe.ml.dataset import build_training_frame
+    from fhe.ml.leakage import audit
+    from fhe.ml.train import evaluate
+
+    engine = create_engine(settings)
+    factory = create_session_factory(engine)
+    cutoff_week = 10
+    try:
+        async with factory() as session:
+            rows, summary = await build_training_frame(session, seasons=list(seasons))
+    finally:
+        await engine.dispose()
+
+    if not rows:
+        print("No training rows. Ingest injuries and workload first.")
+        return 1
+
+    print(
+        f"dataset: {summary.rows} rows, {summary.positives} positives "
+        f"({summary.positive_rate:.2%}), {summary.players} players, "
+        f"horizon {summary.horizon_weeks} weeks"
+    )
+    if not summary.is_trainable:
+        print("Not enough signal to train. Ingest more seasons.")
+        return 1
+
+    print("\nleakage audit:")
+    truncated = [row for row in rows if row["week"] < cutoff_week]
+    findings = audit(rows, truncated_rows=truncated, cutoff_week=cutoff_week)
+    for finding in findings:
+        print(f"  {finding}")
+    if any(not f.passed for f in findings):
+        # A leaked feature makes every metric below meaningless, so there is no
+        # point computing them.
+        print("\nAudit failed. Refusing to evaluate on a compromised dataset.")
+        return 1
+
+    print()
+    print(evaluate(rows, test_seasons=list(holdout)).summary())
+    return 0
+
+
 def _simulate(seed: int, rounds: int, slot: int, teams: int) -> int:
     """Run a headless mock draft and print the resulting board.
 
@@ -288,6 +337,22 @@ def build_parser() -> argparse.ArgumentParser:
     subcommands.add_parser("seed", help="Create the database schema")
     subcommands.add_parser("quality", help="Run data-quality checks")
 
+    ml = subcommands.add_parser("ml", help="Availability model workflows")
+    ml_sub = ml.add_subparsers(dest="ml_command", required=True)
+    ml_eval = ml_sub.add_parser("evaluate", help="Build the dataset, audit it, and evaluate models")
+    ml_eval.add_argument(
+        "--seasons",
+        type=_parse_seasons,
+        default=list(range(2016, 2026)),
+        help="Seasons to build the dataset from",
+    )
+    ml_eval.add_argument(
+        "--holdout",
+        type=_parse_seasons,
+        default=[2024, 2025],
+        help="Seasons held out for testing. Whole seasons only, never a date cut.",
+    )
+
     return parser
 
 
@@ -311,6 +376,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return asyncio.run(_seed(settings))
     if args.command == "quality":
         return asyncio.run(_quality(settings))
+    if args.command == "ml":
+        return asyncio.run(_ml_evaluate(settings, args.seasons, args.holdout))
 
     # argparse rejects an unknown command before reaching here; this exists so
     # a new subcommand added without a branch fails loudly rather than silently

@@ -179,11 +179,26 @@ a real HTTP server because the ASGI transport cannot reproduce disconnects.
 
 ## Machine learning
 
-A transparent heuristic model runs today and is always the fallback. A learned
-availability model is scaffolded but **deliberately not enabled**: promoting one
-requires a leakage audit, time-based splits, calibration, and a demonstrated
-out-of-sample improvement over the heuristic. See
-[`docs/INJURY_MODEL.md`](docs/INJURY_MODEL.md).
+A transparent heuristic runs in production and is always the fallback. A learned
+availability model is **built, audited, and evaluated — and deliberately not
+promoted**.
+
+```bash
+./.venv/bin/python -m fhe.cli ml evaluate
+```
+
+That builds a 58,202-row point-in-time dataset across ten seasons, runs a
+seven-check leakage audit, and evaluates candidates against two baselines on
+held-out seasons. The audit's strongest check rebuilds the dataset with later
+weeks removed and asserts the earlier rows are identical — a structural proof
+that no feature reached forward.
+
+The result worth reading is in [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md): the
+best-*ranking* model has a Brier score twice as bad as predicting the base rate,
+because reweighting the loss bought ranking and destroyed calibration. Since the
+product shows this number as a probability, the promotion bar requires
+calibration as well as ranking — and so does model selection, because choosing on
+ROC-AUC alone repeats the same mistake.
 
 ## Documentation
 

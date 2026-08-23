@@ -140,13 +140,10 @@ Each has a regression test named after the symptom.
 ## 5. What is NOT built — resume here
 
 ### Next
-- **Data quality checks** writing to `data_quality_results` (directive §13).
-  The table exists and is queried by the diagnostics endpoint, but nothing
-  writes to it yet.
-- **Playwright E2E** over the demo path (directive §32)
-- **ML** (`src/fhe/ml/` is empty) — now unblocked, since workload features
-  exist. `docs/MODEL_CARD.md` states the promotion bar; do not lower it.
 - **Command palette, favourites, light mode toggle** (directive §22, §10)
+- **Serving path for the learned model**, if it is ever promoted: a model
+  registry, versioned artefacts, and drift monitoring. `docs/MODEL_CARD.md`
+  records why the model passes its bar and is still not in production.
 - **Docker Compose verification** — never run, because the daemon was down
 
 ### Done since the last handoff
@@ -155,6 +152,10 @@ Each has a regression test named after the symptom.
   drafts identically.
 - Weekly stats and snap counts ingested, so the health model's workload terms
   are measured rather than absent.
+- Ten automated data-quality checks writing to `data_quality_results`.
+- Eight Playwright end-to-end tests, starting both servers themselves.
+- The ML phase: point-in-time dataset, seven-check leakage audit, baselines,
+  temporal evaluation, and calibration — with an honest not-promoted verdict.
 
 ---
 
