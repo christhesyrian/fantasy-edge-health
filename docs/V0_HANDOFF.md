@@ -429,6 +429,37 @@ decoration that does not work.
 `apps/web/package-lock.json` and run `next build`. If it mentions Python, pip,
 or an ASGI entrypoint, the root directory did not take.
 
+**"Cannot find module '../lightningcss.linux-x64-gnu.node'"** (or the same for
+`@tailwindcss/oxide`)
+
+A native binary that Tailwind v4 needs was not installed, because the lockfile
+being used does not list the Linux build.
+
+The subtlety is *which* lockfile. Even with Root Directory set to `apps/web`,
+Vercel clones the whole repository, and npm walks up from `apps/web`, finds the
+`workspaces` field in the root `package.json`, and resolves against the **root**
+`package-lock.json` — not the frontend's own. The giveaway in the failure output
+is `npm error workspace web@0.1.0`.
+
+So the root lockfile is the one that has to be complete for Linux. npm prunes
+optional platform packages it does not need when it writes a lockfile, so one
+generated on macOS can omit every `*-linux-x64-*` binary. Generating it on
+linux/x64 produces a lockfile carrying **all** platforms — linux, darwin, and
+win32 — which then works everywhere.
+
+Regenerate it the way it is meant to be regenerated:
+
+```bash
+docker run --rm --platform linux/amd64 -v "$PWD":/w -w /w node:22-slim \
+  npm install --package-lock-only --no-audit --no-fund
+```
+
+Verify before committing — it should report a non-zero count:
+
+```bash
+node -e "const l=require('./package-lock.json');console.log(Object.keys(l.packages).filter(k=>k.includes('linux-x64')).length)"
+```
+
 **"npm ci … EUSAGE … Missing: @playwright/test from lock file"**
 
 `apps/web/package-lock.json` is out of sync with its `package.json`. This
