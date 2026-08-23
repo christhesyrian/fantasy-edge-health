@@ -19,7 +19,7 @@ done: implemented, formatted, linted, type-checked, tested, documented.
 | 8 — Sleeper live draft | **Done** | Connect, DB-backed player pool, supervised poller, and one `/drafts/{id}` API serving live and simulated drafts identically. |
 | 9 — ML | **Done** | Point-in-time dataset, seven-check leakage audit, baselines, temporal evaluation, calibration. The verdict is honest and negative: not promoted. See `docs/MODEL_CARD.md`. |
 | 10 — Product polish | **Done** | Comparison, alerts, keyboard shortcuts, accessibility, reduced motion, command palette, favourites, light/system theme. |
-| 11 — Production readiness | **Partial** | Full suite, CI, security scanning, observability, documentation, container images, 23 Playwright end-to-end tests, load and soak testing with measured results, a deployment architecture, and live-session recovery across restarts. Missing: a verified Compose run — the Docker daemon has never been available on this machine. |
+| 11 — Production readiness | **Done** | Full suite, CI, security scanning, observability, documentation, 23 Playwright end-to-end tests, load and soak testing with measured results, a deployment architecture, live-session recovery across restarts, and a **verified** Compose stack — six services, containerised migrations, SSE over Redis, clean shutdown. |
 
 ## Quality gates
 

@@ -112,7 +112,7 @@ tests; both were stale, and are corrected in §4.
 | Observability | **COMPLETE** | structlog with request ids, Prometheus counters/histograms/gauges, `/api/v1/metrics`, degradations named on `/health`. |
 | CI | **COMPLETE** | `.github/workflows/ci.yml` — python, web, integration, security, docker jobs. |
 | Container images | **COMPLETE BUT UNVERIFIED** | `services/api/Dockerfile`, `services/worker/Dockerfile`, `apps/web/Dockerfile`, `docker-compose.yml` with health checks and a dedicated migrate service. |
-| **Docker Compose verified** | **PARTIAL** | First real attempt made 2026-08-23. It found and fixed a genuine break — `apps/web/package-lock.json` was out of sync, so `npm ci` failed and the web image could not build. Postgres, Redis, and MinIO images pulled; API and worker images were building when the host disk filled (981 MiB free, 100% capacity) and the daemon stopped responding. **The stack has still never come up**: no containerised migration, no health check against PostgreSQL, no SSE exercised. |
+| **Docker Compose verified** | **COMPLETE** | Verified 2026-08-23. All six services up, migrations applied in a container against PostgreSQL, `/health/ready` reporting an empty `degradations` array on Postgres + Redis, a demo draft run, SSE delivered over Redis with monotonic sequences, 4,089 players ingested, clean shutdown. Found and fixed two real bugs on the way: an out-of-sync frontend lockfile breaking `npm ci`, and a volume-ownership fault breaking ingestion under the non-root user. |
 | **Load testing** | **COMPLETE** *(new this pass)* | `src/fhe/loadtest/`, `fhe loadtest`. Real measurements in `docs/PERFORMANCE.md`. |
 | **Deployment architecture** | **COMPLETE** *(new this pass)* | `docs/DEPLOYMENT.md`. |
 | Migrations | **COMPLETE** | Alembic with a drift test. |
@@ -135,25 +135,21 @@ tests; both were stale, and are corrected in §4.
 
 Stated plainly, with no euphemism:
 
-1. **The Docker Compose stack has never come up.** Building it was attempted
-   for the first time on 2026-08-23; it fixed a real lockfile break and then
-   stopped because the host disk was 100% full. Migrations, health checks, and
-   SSE have never been exercised in containers.
-2. **No dedicated Health Center or Rankings page.** The API supports both; the
+1. **No dedicated Health Center or Rankings page.** The API supports both; the
    routes do not exist. Deliberately left for v0.
-3. **Accessibility is AA in dark mode only.** Light mode contrast is unaudited
+2. **Accessibility is AA in dark mode only.** Light mode contrast is unaudited
    and CI has no automated a11y check.
-4. **Multi-worker deployment is unsupported.** Sessions and pollers are
+3. **Multi-worker deployment is unsupported.** Sessions and pollers are
    per-process. One worker is the supported configuration, which
    `docs/PERFORMANCE.md` shows is ample. Documented in `docs/DEPLOYMENT.md` §7.
-5. **Board evaluation blocks the event loop.** Measured: `health` latency rises
+4. **Board evaluation blocks the event loop.** Measured: `health` latency rises
    from 1.6 ms to 291 ms as concurrency goes 1 → 50. Fine at realistic load, and
    the fix (cache the board per session between picks) is identified but not
    done.
-6. **No promoted ML model**, by design.
-7. **PostgreSQL is unmeasured.** All performance numbers are against SQLite,
+5. **No promoted ML model**, by design.
+6. **PostgreSQL is unmeasured.** All performance numbers are against SQLite,
    because of (1).
-8. **Preview fixtures ship as a 686 KiB chunk** in every build. It is never
+7. **Preview fixtures ship as a 686 KiB chunk** in every build. It is never
    referenced by the app manifest and never fetched unless preview mode is on,
    but it is present in the output.
 

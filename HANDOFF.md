@@ -53,7 +53,7 @@ Frontend only, no Python:
 | Python | **3.14.3** at `/opt/homebrew/bin/python3.14`. Bare `python3` is Anaconda **3.9** — never use it. |
 | venv | `./.venv`. **Always invoke `./.venv/bin/python`.** |
 | Node | v25.6.0, npm 11.12.0. No pnpm. npm workspaces from the repo root. |
-| Docker | 29.7.2, Compose v5.3.1. First build attempted 2026-08-23; blocked by a **full host disk** (981 MiB free of 228 GiB), which crashed the daemon. Stack has never come up. |
+| Docker | 29.7.2, Compose v5.3.1. **Stack verified end to end 2026-08-23.** `docker compose up --build` brings up all six services; `/health/ready` shows an empty `degradations` array on Postgres + Redis. |
 | Postgres / Redis | Not installed natively — hence the fallbacks. |
 
 ---
@@ -160,17 +160,18 @@ Each has a regression test named after the symptom.
     `apps/web` would have hit the same wall. npm workspaces is the trap: running
     `npm install` anywhere inside the repo writes the *root* lockfile and leaves
     the frontend's own one to rot. It must be regenerated in isolation.
+19. **Ingestion died in its container** with `PermissionError` on
+    `data/cache/nflverse`. Both images run as a non-root user, and Docker
+    creates a named volume's mount point as root unless the image already has a
+    directory there — it seeds an empty volume from the image path, ownership
+    included. Fixed by creating `/app/data/cache` owned by `fhe` at build time.
+    Only reachable by actually running the stack.
 
 ---
 
 ## 5. What is NOT built — resume here
 
 ### Next
-- **Docker Compose verification** — the build was attempted for the first time
-  on 2026-08-23 and found a real break (see bug 18). It then stopped because the
-  host disk was 100% full. The stack has still never come *up*: no containerised
-  migration, no health check against PostgreSQL, no SSE. Free disk, then
-  `docker compose up --build`.
 - **Dedicated rankings and health-centre pages.** `GET /api/v1/players` and
   `GET /api/v1/players/{uuid}` were added for exactly this and are tested; the
   routes themselves are deliberately left to the frontend pass.
@@ -186,6 +187,11 @@ Each has a regression test named after the symptom.
   records why the model is deliberately not in production.
 
 ### Done since the last handoff
+
+**Docker verification (2026-08-23)**
+- The Compose stack was built and run end to end for the first time: six
+  services, migrations applied in a container against PostgreSQL, SSE delivered
+  over Redis, 4,089 players ingested, clean shutdown. It found bugs 18 and 19.
 
 **Pre-v0 stabilisation pass**
 - **Live draft session recovery.** An API restart mid-draft no longer costs the

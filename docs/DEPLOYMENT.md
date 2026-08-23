@@ -237,7 +237,15 @@ above and the right way to test a change against real storage engines.
 docker compose up --build
 ```
 
-> **Not verified on this machine.** The Docker daemon has not been available
-> during development, so the Compose stack is written but has never been run
-> end to end here. Treat it as unproven until someone brings it up; see
-> [`../USER_ACTION_REQUIRED.md`](../USER_ACTION_REQUIRED.md).
+Verified end to end on 2026-08-23: all six services up, `alembic upgrade head`
+applied in its own container against PostgreSQL, `/api/v1/health/ready`
+reporting an empty `degradations` array, a demo draft evaluated, server-sent
+events delivered over Redis with monotonic sequences, ingestion writing 4,089
+players, and `docker compose down` shutting everything down cleanly.
+
+Two things that only a real run could have found, both fixed: the frontend
+lockfile was out of sync so `npm ci` failed, and the cache volume mounted as
+root under a non-root container user, killing ingestion with a
+`PermissionError`. The second is worth remembering — Docker seeds an empty
+named volume from whatever the image has at that path, ownership included, so
+the directory must exist and be owned correctly at build time.

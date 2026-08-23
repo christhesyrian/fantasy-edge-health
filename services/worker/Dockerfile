@@ -40,6 +40,13 @@ COPY --chown=fhe:fhe alembic.ini ./
 COPY --chown=fhe:fhe alembic ./alembic
 COPY --chown=fhe:fhe data/fixtures ./data/fixtures
 
+# Create the cache directory owned by the runtime user *before* the volume is
+# mounted over it. Docker seeds an empty named volume from whatever the image
+# has at that path, ownership included; with no directory here it creates the
+# mount point as root instead, and a non-root process cannot write to it.
+# Without this, ingestion dies on `PermissionError: data/cache/nflverse`.
+RUN mkdir -p /app/data/cache && chown -R fhe:fhe /app/data
+
 USER fhe
 
 CMD ["fhe", "ingest", "--help"]

@@ -9,61 +9,24 @@ do, and what it unlocks.
 
 ---
 
-## 1. Free disk space, then verify the Docker stack — REQUIRED to finish
-   Compose verification
+## 1. Nothing — the Docker stack is verified
 
-**Why:** Docker Desktop was started on 2026-08-23 and `docker compose build`
-was run for the first time. It got further than ever before and then stopped
-for a reason that has nothing to do with this project: **the disk is full.**
+Kept as a record rather than an action. On 2026-08-23 the full Compose stack was
+built and run end to end for the first time: PostgreSQL, Redis, MinIO,
+migrations, API, worker, and web. `/api/v1/health/ready` reported
+`"database": "ok"`, `"event_bus": "redis"`, and an **empty** `degradations`
+array — the proof it was on the real storage engines rather than the SQLite and
+in-process fallbacks. A demo draft ran, server-sent events were delivered over
+Redis with monotonic sequences, ingestion wrote 4,089 players into PostgreSQL,
+and `docker compose down` shut everything down cleanly.
 
-```
-/System/Volumes/Data   228Gi total   981Mi free   100% capacity
-```
-
-BuildKit could not write `/var/lib/docker/buildkit/metadata_v2.db`
-(`input/output error`), and the daemon then stopped responding entirely. Docker
-itself is holding about 6.9 GB.
-
-**What that run did establish:** the `web` image was genuinely broken and is now
-fixed. `npm ci` failed with `EUSAGE` because `apps/web/package-lock.json` was
-missing `@playwright/test`, `playwright`, `playwright-core`, and `fsevents`.
-That is repaired, and `npm ci --dry-run` now resolves cleanly. The `postgres`,
-`redis`, and `minio` images pulled; the API and worker images were building when
-the disk gave out.
-
-**What is still unverified:** the stack has never come *up*. No migration has
-run in a container, no health endpoint has been checked against PostgreSQL, and
-no SSE update has been exercised through it.
-
-**What to do:** free several GB — the usual suspects are `~/Library/Caches`,
-old Xcode simulators (`xcrun simctl delete unavailable`), and Docker's own
-data. Then restart Docker Desktop and confirm it answers:
-
-```bash
-docker info --format '{{.ServerVersion}}'
-```
-
-Reclaim Docker's own space first, since it needs no judgement about your files:
-
-```bash
-docker builder prune -af && docker image prune -af
-```
-
-Then bring the stack up and exercise it:
+It found two real bugs, both fixed: an out-of-sync frontend lockfile that broke
+`npm ci`, and a volume-ownership fault that made ingestion die with
+`PermissionError` under the non-root container user.
 
 ```bash
 docker compose up --build
 ```
-
-Check `http://localhost:8000/api/v1/health/ready` reports ready with an
-**empty** `degradations` array — that is the proof it is on PostgreSQL and Redis
-rather than the SQLite and in-process fallbacks.
-
-**Unlocks:** a production-shaped local stack, the first real verification of the
-container images, and the only way to get PostgreSQL performance numbers;
-everything in `docs/PERFORMANCE.md` is currently SQLite.
-
----
 
 ## 2. Provide your Sleeper username — OPTIONAL
 

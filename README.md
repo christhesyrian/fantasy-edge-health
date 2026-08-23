@@ -253,20 +253,20 @@ than one that names them:
   distributions are right-skewed; the model re-anchors fallers to compensate,
   which is a correction, not a fix.
 - **No ADP or projections ship with the product.** Bring your own by CSV.
-- **The Docker Compose stack is unverified.** It is written and has never been
-  run, because the daemon has not been available on the development machine.
-- **Performance is measured against SQLite only**, for the same reason.
+- **Performance is measured against SQLite only.** The load and soak numbers
+  predate the first successful Compose run; they have not been retaken against
+  PostgreSQL.
 
 ## Roadmap
 
 Everything on the original roadmap is done. What is actually next, in order:
 
-1. Verify the Docker Compose stack — written, never run, because the daemon has
-   not been available (see [`USER_ACTION_REQUIRED.md`](USER_ACTION_REQUIRED.md))
-2. Dedicated rankings and health-centre pages — the API already serves them
+1. Dedicated rankings and health-centre pages — the API already serves them
    through `/api/v1/players`, so this is UI work
-3. Cache the evaluated board between picks; board evaluation currently blocks
+2. Cache the evaluated board between picks; board evaluation currently blocks
    the event loop under concurrency ([`docs/PERFORMANCE.md`](docs/PERFORMANCE.md))
+3. Re-measure performance against the containerised PostgreSQL stack, now that
+   it runs
 4. Light-mode contrast audit and an automated accessibility check in CI
 5. Multi-worker support: shared poller ownership, not just a shared event bus
 
