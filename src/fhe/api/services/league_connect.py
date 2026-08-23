@@ -313,9 +313,16 @@ async def connect_sleeper_draft(
     league_id: str,
     draft_id: str,
     user_id: str | None = None,
+    user_draft_slot: int | None = None,
     as_of: date | None = None,
 ) -> tuple[ConnectedDraft, DraftBinding, DraftSession]:
     """Connect a Sleeper draft and return a session ready to be polled.
+
+    ``user_draft_slot`` overrides the seat that would be resolved from
+    ``user_id``. Recovery after a restart passes the slot it already recorded,
+    which is what lets it rebuild a session without knowing the user id — and
+    means recovery and a fresh connection run the identical code path, so they
+    cannot diverge.
 
     Raises:
         DraftNotFoundError: The league or draft does not exist.
@@ -336,7 +343,9 @@ async def connect_sleeper_draft(
             draft_id=draft_id,
         )
 
-    user_slot = resolve_user_slot(draft, user_id)
+    user_slot = (
+        user_draft_slot if user_draft_slot is not None else resolve_user_slot(draft, user_id)
+    )
     settings = league_settings_from(league, draft, user_draft_slot=user_slot)
     season = int(draft.season) if draft.season.isdigit() else 0
 

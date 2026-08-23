@@ -10,7 +10,6 @@ import pytest
 from sqlalchemy import select
 
 import fhe.db.models  # noqa: F401  -- registers metadata
-from fhe.api.events import InProcessEventBus
 from fhe.api.services.draft_session import DraftSessionRegistry
 from fhe.api.services.league_connect import (
     DraftNotFoundError,
@@ -24,10 +23,7 @@ from fhe.config import Settings
 from fhe.core.types import DraftStatus, Position, ScoringFormat
 from fhe.data.providers.sleeper import SleeperDraft, SleeperLeague, SleeperPick
 from fhe.db import Base, create_engine, create_session_factory
-from fhe.db.base import SEASON_LONG_WEEK
 from fhe.db.models.draft import Draft, FantasyLeague
-from fhe.db.models.fantasy import AdpSnapshot, FantasyProjection
-from fhe.db.models.player import Player, PlayerExternalId
 
 pytestmark = pytest.mark.integration
 
@@ -107,70 +103,6 @@ def sleeper_pick(pick_no: int, player_id: str) -> SleeperPick:
         is_keeper=False,
         metadata={},
     )
-
-
-@pytest.fixture
-async def session_factory(tmp_path: Path):  # type: ignore[no-untyped-def]
-    engine = create_engine(Settings(_env_file=None, data_dir=tmp_path))
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    factory = create_session_factory(engine)
-
-    async with factory() as session:
-        for index in range(30):
-            uuid = f"p-{index:03d}"
-            session.add(
-                Player(
-                    player_uuid=uuid,
-                    full_name=f"Player {index}",
-                    normalized_name=f"player{index}",
-                    position="RB",
-                    team="SEA",
-                    age=26.0,
-                    years_experience=4,
-                    is_active=True,
-                    popularity_rank=index + 1,
-                    identity_method="DIRECT_GSIS",
-                    identity_confidence=1.0,
-                    source="test",
-                )
-            )
-            session.add(
-                PlayerExternalId(player_uuid=uuid, system="sleeper_id", external_id=f"s-{index}")
-            )
-            session.add(
-                FantasyProjection(
-                    player_uuid=uuid,
-                    season=2026,
-                    week=SEASON_LONG_WEEK,
-                    scoring_format="ppr",
-                    projected_points=300.0 - index * 5,
-                    source="test",
-                    ingested_at=NOW,
-                    observed_at=NOW,
-                )
-            )
-            session.add(
-                AdpSnapshot(
-                    player_uuid=uuid,
-                    season=2026,
-                    scoring_format="ppr",
-                    adp=float(index + 1),
-                    snapshot_date=NOW,
-                    source="test",
-                    ingested_at=NOW,
-                    observed_at=NOW,
-                )
-            )
-        await session.commit()
-
-    yield factory
-    await engine.dispose()
-
-
-@pytest.fixture
-def registry() -> DraftSessionRegistry:
-    return DraftSessionRegistry(InProcessEventBus())
 
 
 class TestDerivation:

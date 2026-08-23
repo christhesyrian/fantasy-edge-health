@@ -15,10 +15,10 @@ import asyncio
 from collections.abc import AsyncIterator
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from sse_starlette.sse import EventSourceResponse
 
-from fhe.api.deps import PollerManagerDep, RegistryDep
+from fhe.api.deps import PollerManagerDep, RegistryDep, SessionFactoryDep, SettingsDep
 from fhe.api.events import DraftEvent, EventType
 from fhe.api.mappers import player_detail
 from fhe.api.schemas import (
@@ -28,8 +28,10 @@ from fhe.api.schemas import (
     PollerStatusOut,
 )
 from fhe.api.services.board_builder import DEFAULT_BOARD_DEPTH, build_board_payload
-from fhe.api.services.draft_session import DraftSession
+from fhe.api.services.draft_session import DraftSession, SessionNotFoundError
+from fhe.api.services.session_recovery import recover_session
 from fhe.core.errors import UnknownPlayerError
+from fhe.data.providers.sleeper import SleeperProvider
 from fhe.observability import get_logger
 
 router = APIRouter(prefix="/drafts", tags=["drafts"])
@@ -75,18 +77,57 @@ def _poller_status(manager: PollerManagerDep, draft_id: str) -> PollerStatusOut 
     )
 
 
+async def resolve_session(
+    draft_id: str,
+    registry: RegistryDep,
+    settings: SettingsDep,
+    session_factory: SessionFactoryDep,
+    pollers: PollerManagerDep,
+) -> DraftSession:
+    """The session for a draft, rebuilding it from persisted state if needed.
+
+    Sessions are in-memory, so an API restart mid-draft would otherwise leave a
+    connected league unreadable until the user reconnected it by hand. A live
+    draft is reconstructable — the provider owns the picks and the database owns
+    the league — so a miss is repaired rather than reported.
+
+    A simulation that has been evicted or never existed is still a 404: it has
+    no persisted metadata to rebuild from, and inventing one would be worse than
+    saying so.
+    """
+    try:
+        return registry.get(draft_id)
+    except SessionNotFoundError:
+        pass
+
+    async with SleeperProvider(settings) as sleeper:
+        recovered = await recover_session(
+            session_factory,
+            sleeper,
+            registry,
+            draft_id=draft_id,
+            pollers=pollers,
+            # The poller outlives this request, so it gets its own client
+            # rather than the one closing with this block.
+            poller_provider_factory=lambda: SleeperProvider(settings),
+        )
+    if recovered is None:
+        raise SessionNotFoundError(f"no draft session {draft_id!r}")
+    return recovered
+
+
+SessionDep = Annotated[DraftSession, Depends(resolve_session)]
+
+
 @router.get("/{draft_id}", response_model=DraftStateOut, summary="Draft state")
-async def get_state(
-    draft_id: str, registry: RegistryDep, pollers: PollerManagerDep
-) -> DraftStateOut:
+async def get_state(draft_id: str, session: SessionDep, pollers: PollerManagerDep) -> DraftStateOut:
     """Lifecycle summary, including live poller health when there is one."""
-    return _state_of(registry.get(draft_id), _poller_status(pollers, draft_id))
+    return _state_of(session, _poller_status(pollers, draft_id))
 
 
 @router.get("/{draft_id}/board", response_model=DraftBoardOut, summary="Draft board")
 async def get_board(
-    draft_id: str,
-    registry: RegistryDep,
+    session: SessionDep,
     depth: int = Query(
         default=DEFAULT_BOARD_DEPTH,
         ge=1,
@@ -99,7 +140,6 @@ async def get_board(
     Also the canonical-state read a client performs after a dropped event
     stream, rather than trying to replay the gap.
     """
-    session = registry.get(draft_id)
     session.evaluate()
     return build_board_payload(session, depth=depth)
 
@@ -109,9 +149,8 @@ async def get_board(
     response_model=PlayerDetail,
     summary="Player detail",
 )
-async def get_player(draft_id: str, player_uuid: str, registry: RegistryDep) -> PlayerDetail:
+async def get_player(player_uuid: str, session: SessionDep) -> PlayerDetail:
     """Everything the player drawer needs, without leaving draft context."""
-    session = registry.get(draft_id)
     player = session.players_by_uuid.get(player_uuid)
     if player is None:
         raise UnknownPlayerError(f"no player {player_uuid!r} in this draft pool")
@@ -120,8 +159,7 @@ async def get_player(draft_id: str, player_uuid: str, registry: RegistryDep) -> 
 
 @router.get("/{draft_id}/compare", response_model=list[PlayerDetail], summary="Compare players")
 async def compare_players(
-    draft_id: str,
-    registry: RegistryDep,
+    session: SessionDep,
     player_uuid: Annotated[
         list[str],
         Query(
@@ -136,7 +174,6 @@ async def compare_players(
     Bounded at four because the comparison view renders columns, and an
     unbounded list would turn one request into arbitrary work.
     """
-    session = registry.get(draft_id)
     players = session.players_by_uuid
     missing = [uuid for uuid in player_uuid if uuid not in players]
     if missing:
@@ -165,7 +202,7 @@ async def disconnect(draft_id: str, pollers: PollerManagerDep) -> None:
     status_code=status.HTTP_200_OK,
 )
 async def stream_events(
-    draft_id: str, request: Request, registry: RegistryDep
+    request: Request, session: SessionDep, registry: RegistryDep
 ) -> EventSourceResponse:
     """Stream draft events over server-sent events.
 
@@ -177,8 +214,6 @@ async def stream_events(
     ``EventSource.onmessage`` fires only for unnamed events and would silently
     receive nothing.
     """
-    session = registry.get(draft_id)
-
     # Subscribe before the response starts streaming, so a pick published
     # between this handler running and the generator's first tick cannot be
     # missed. EventBus.subscribe registers eagerly for exactly this reason.
