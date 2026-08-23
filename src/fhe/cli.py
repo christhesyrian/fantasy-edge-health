@@ -124,6 +124,35 @@ async def _ingest_injuries(settings: Settings, seasons: Sequence[int]) -> int:
     return 1 if failures else 0
 
 
+async def _ingest_workload(settings: Settings, seasons: Sequence[int]) -> int:
+    """Backfill weekly production and snap counts."""
+    from fhe.data.ingest.nflverse_workload import ingest_workload_for_season
+    from fhe.data.providers.nflverse import NflverseProvider
+    from fhe.db import create_engine, create_session_factory
+
+    await _create_schema(settings)
+    engine = create_engine(settings)
+    factory = create_session_factory(engine)
+    failures = 0
+
+    try:
+        async with NflverseProvider(settings) as nflverse:
+            for season in seasons:
+                stats, snaps = await ingest_workload_for_season(factory, nflverse, season)
+                for label, run in (("weekly stats", stats), ("snap counts", snaps)):
+                    print(
+                        f"{label} {season}: {run.status().value} — read {run.rows_read}, "
+                        f"wrote {run.rows_written}, rejected {run.rows_rejected}, "
+                        f"unresolved {run.rows_unresolved_identity}"
+                    )
+                    if not run.rows_written:
+                        failures += 1
+    finally:
+        await engine.dispose()
+
+    return 1 if failures else 0
+
+
 def _simulate(seed: int, rounds: int, slot: int, teams: int) -> int:
     """Run a headless mock draft and print the resulting board.
 
@@ -217,6 +246,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated seasons, e.g. 2023,2024,2025",
     )
 
+    workload = ingest_sub.add_parser("workload", help="Backfill weekly stats and snap counts")
+    workload.add_argument(
+        "--seasons",
+        type=_parse_seasons,
+        default=list(DEFAULT_BACKFILL_SEASONS),
+        help="Comma-separated seasons, e.g. 2024,2025",
+    )
+
     simulate = subcommands.add_parser("simulate", help="Run a headless mock draft")
     simulate.add_argument("--seed", type=int, default=42)
     simulate.add_argument("--teams", type=int, default=12)
@@ -239,6 +276,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "ingest":
         if args.dataset == "players":
             return asyncio.run(_ingest_players(settings, force=args.force))
+        if args.dataset == "workload":
+            return asyncio.run(_ingest_workload(settings, args.seasons))
         return asyncio.run(_ingest_injuries(settings, args.seasons))
     if args.command == "simulate":
         return _simulate(args.seed, args.rounds, args.slot, args.teams)

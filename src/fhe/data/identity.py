@@ -273,18 +273,35 @@ class PlayerCrosswalk:
         return crosswalk
 
 
+# Identifiers nflverse publishes on its player table. Harvested because the
+# community crosswalk only covers players it has a Sleeper id for, while
+# nflverse covers anyone who has ever appeared - which is what makes snap
+# counts, the one dataset keyed on pfr_id, joinable for the rest.
+NFLVERSE_ID_COLUMNS: Final[tuple[str, ...]] = (
+    "pfr_id",
+    "espn_id",
+    "pff_id",
+    "otc_id",
+    "esb_id",
+    "nfl_id",
+    "smart_id",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class NflversePlayerIndex:
-    """Name-based indexes over nflverse players, for fallback matching."""
+    """Indexes over nflverse players: identifiers, and names for fallback."""
 
     by_gsis: Mapping[str, Mapping[str, Any]]
     by_name_team_position: Mapping[tuple[str, str, str], tuple[str, ...]]
     by_name_position: Mapping[tuple[str, str], tuple[str, ...]]
+    external_ids_by_gsis: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
 
     @classmethod
     def build(cls, players: Iterable[Mapping[str, Any]]) -> NflversePlayerIndex:
         """Index nflverse player rows for lookup."""
         by_gsis: dict[str, Mapping[str, Any]] = {}
+        external: dict[str, Mapping[str, str]] = {}
         name_team_pos: dict[tuple[str, str, str], list[str]] = {}
         name_pos: dict[tuple[str, str], list[str]] = {}
 
@@ -293,6 +310,14 @@ class NflversePlayerIndex:
             if gsis is None:
                 continue
             by_gsis[gsis] = row
+
+            ids = {
+                column: value
+                for column in NFLVERSE_ID_COLUMNS
+                if (value := clean_token(row.get(column))) is not None
+            }
+            if ids:
+                external[gsis] = ids
 
             name_key = normalize_name(
                 clean_token(row.get("display_name")) or clean_token(row.get("full_name"))
@@ -311,6 +336,7 @@ class NflversePlayerIndex:
             by_gsis=by_gsis,
             by_name_team_position={k: tuple(v) for k, v in name_team_pos.items()},
             by_name_position={k: tuple(v) for k, v in name_pos.items()},
+            external_ids_by_gsis=external,
         )
 
 
@@ -486,8 +512,16 @@ class IdentityResolver:
         method: ResolutionMethod,
         external: dict[str, str],
     ) -> ResolvedIdentity:
-        """Assemble a resolved identity."""
-        merged = dict(external)
+        """Assemble a resolved identity.
+
+        Identifiers are merged from every source that knows this player, with
+        the crosswalk taking precedence over nflverse where both have a value -
+        the crosswalk is fantasy-specific and updated weekly.
+        """
+        merged: dict[str, str] = {}
+        if self._index is not None:
+            merged.update(self._index.external_ids_by_gsis.get(gsis_id, {}))
+        merged.update(external)
         merged["gsis_id"] = gsis_id
         merged["sleeper_id"] = sleeper_id
         return ResolvedIdentity(

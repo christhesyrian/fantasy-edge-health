@@ -10,10 +10,11 @@ real data or the demo, so a live draft and a rehearsal exercise identical code.
 
 Query strategy
 --------------
-Five bounded queries, assembled in Python, rather than one join. A single join
-across projections, ADP snapshots, health and injury history would fan out
-multiplicatively and return a row per injury event per player. The pool is a few
-hundred players, so assembling in memory is both faster and far easier to read.
+Six bounded queries, assembled in Python, rather than one join. A single join
+across projections, ADP snapshots, health, injury history and weekly stats would
+fan out multiplicatively and return a row per injury event per week per player.
+The pool is a few hundred players, so assembling in memory is both faster and far
+easier to read.
 """
 
 from __future__ import annotations
@@ -22,13 +23,14 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fhe.core.draft.models import DraftablePlayer
 from fhe.core.health import (
     HealthInputs,
     InjuryHistoryEvent,
+    WorkloadSummary,
     score_health,
 )
 from fhe.core.injury import normalize_practice_status
@@ -40,6 +42,7 @@ from fhe.core.types import (
 )
 from fhe.db.base import SEASON_LONG_WEEK
 from fhe.db.models.fantasy import AdpSnapshot, FantasyProjection
+from fhe.db.models.football import PlayerWeeklyStat, SnapCount
 from fhe.db.models.health import CurrentPlayerHealth, InjuryEvent
 from fhe.db.models.player import Player
 from fhe.observability import get_logger
@@ -59,6 +62,11 @@ DEFAULT_POOL_LIMIT = 600
 # Seasons of injury history the health model considers.
 HISTORY_SEASONS = 3
 
+# Only regular-season games count toward workload. Including the postseason
+# would inflate per-game usage for the minority of players whose team went deep,
+# which is a property of their team rather than their exposure.
+REGULAR_SEASON = "REG"
+
 
 @dataclass(frozen=True, slots=True)
 class PoolProvenance:
@@ -72,6 +80,7 @@ class PoolProvenance:
     with_projection: int
     with_adp: int
     with_health: int
+    with_workload: int = 0
     projection_sources: tuple[str, ...] = field(default=())
     adp_sources: tuple[str, ...] = field(default=())
     projection_observed_at: datetime | None = None
@@ -182,6 +191,8 @@ async def load_player_pool(
     adp = await _latest_adp(session, uuids, season, scoring_format)
     health_rows = await _current_health(session, uuids)
     history = await _injury_history(session, uuids, season)
+    # Workload describes the season just played, not the one being drafted for.
+    workloads = await _workload(session, uuids, season - 1)
 
     pool: list[DraftablePlayer] = []
     for player in player_rows:
@@ -213,10 +224,7 @@ async def load_player_pool(
                 injury_history=events,
                 age=player.age,
                 years_experience=player.years_experience,
-                # Workload arrives with weekly-stats ingestion; until then the
-                # health model correctly reports lower confidence rather than
-                # assuming a usage profile.
-                workload=None,
+                workload=workloads.get(uuid),
             )
         )
 
@@ -233,6 +241,7 @@ async def load_player_pool(
                 adp_source=adp_row.source if adp_row else None,
                 health=assessment,
                 injury_history=events,
+                workload=workloads.get(uuid),
                 bye_week=None,
                 age=player.age,
                 years_experience=player.years_experience,
@@ -245,6 +254,7 @@ async def load_player_pool(
         with_projection=sum(1 for p in pool if p.projected_points is not None),
         with_adp=sum(1 for p in pool if p.adp is not None),
         with_health=len(health_rows),
+        with_workload=len(workloads),
         projection_sources=tuple(sorted({p.source for p in projections.values()})),
         adp_sources=tuple(sorted({a.source for a in adp.values()})),
         projection_observed_at=max(
@@ -260,6 +270,7 @@ async def load_player_pool(
         with_projection=provenance.with_projection,
         with_adp=provenance.with_adp,
         with_health=provenance.with_health,
+        with_workload=provenance.with_workload,
     )
     return tuple(pool), provenance
 
@@ -321,6 +332,74 @@ async def _latest_adp(
         .all()
     )
     return {row.player_uuid: row for row in rows}
+
+
+async def _workload(
+    session: AsyncSession, uuids: list[str], season: int
+) -> dict[str, WorkloadSummary]:
+    """Per-game usage for a season, from weekly stats and snap counts.
+
+    Aggregated in SQL rather than fetched per week: a 600-player pool across 18
+    weeks is ten thousand rows the application does not need to see.
+
+    Snap counts and production are averaged over their *own* game counts, since
+    the two datasets join on different identifiers and a player can appear in
+    one without the other.
+    """
+    stat_rows = (
+        await session.execute(
+            select(
+                PlayerWeeklyStat.player_uuid,
+                func.count().label("games"),
+                func.avg(PlayerWeeklyStat.carries).label("carries"),
+                func.avg(PlayerWeeklyStat.targets).label("targets"),
+            )
+            .where(
+                PlayerWeeklyStat.player_uuid.in_(uuids),
+                PlayerWeeklyStat.season == season,
+                PlayerWeeklyStat.season_type == REGULAR_SEASON,
+            )
+            .group_by(PlayerWeeklyStat.player_uuid)
+        )
+    ).all()
+
+    snap_rows = (
+        await session.execute(
+            select(
+                SnapCount.player_uuid,
+                func.avg(SnapCount.offense_snaps).label("snaps"),
+            )
+            .where(
+                SnapCount.player_uuid.in_(uuids),
+                SnapCount.season == season,
+                SnapCount.offense_snaps.isnot(None),
+            )
+            .group_by(SnapCount.player_uuid)
+        )
+    ).all()
+
+    snaps_by_uuid = {row.player_uuid: row.snaps for row in snap_rows}
+
+    summaries: dict[str, WorkloadSummary] = {}
+    for row in stat_rows:
+        summaries[row.player_uuid] = WorkloadSummary(
+            season=season,
+            games_played=int(row.games) if row.games is not None else None,
+            snaps_per_game=(
+                round(float(snaps_by_uuid[row.player_uuid]), 1)
+                if snaps_by_uuid.get(row.player_uuid) is not None
+                else None
+            ),
+            carries_per_game=round(float(row.carries), 1) if row.carries is not None else None,
+            targets_per_game=round(float(row.targets), 1) if row.targets is not None else None,
+        )
+
+    # A player with snaps but no production line still has measured exposure.
+    for uuid, snaps in snaps_by_uuid.items():
+        if uuid not in summaries and snaps is not None:
+            summaries[uuid] = WorkloadSummary(season=season, snaps_per_game=round(float(snaps), 1))
+
+    return summaries
 
 
 async def _current_health(

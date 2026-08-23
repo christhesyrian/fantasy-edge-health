@@ -9,7 +9,11 @@ What was verified, not assumed
 * Stable asset URL pattern:
   ``https://github.com/nflverse/nflverse-data/releases/download/<tag>/<asset>``
 * Injury reports cover **2009 through 2025**. There is no 2026 file yet, which is
-  expected: the 2026 season has not started. The 2025 file is complete - 6,068
+  expected: the 2026 season has not started.
+* Weekly player stats live under the ``stats_player`` release, not the legacy
+  ``player_stats`` one, which stops before the current seasons.
+* Snap counts are keyed by ``pfr_player_id``, **not** ``gsis_id``, so they need a
+  different crosswalk column from every other dataset here. The 2025 file is complete - 6,068
   rows across weeks 1-22 - and the release was rebuilt on 2026-03-18.
 * ``players.parquet`` carries ``gsis_id``, ``espn_id``, ``pfr_id``, ``pff_id``
   and others, but **no** ``sleeper_id``. Linking Sleeper to nflverse therefore
@@ -55,7 +59,7 @@ PROVIDER_NAME: Final = "nflverse"
 INJURY_SEASONS: Final = range(2009, 2026)
 SNAP_COUNT_SEASONS: Final = range(2012, 2026)
 DEPTH_CHART_SEASONS: Final = range(2001, 2027)
-WEEKLY_STATS_SEASONS: Final = range(1999, 2027)
+WEEKLY_STATS_SEASONS: Final = range(1999, 2026)
 
 # Downloaded assets are immutable for a given release build, so a long cache is
 # safe and keeps the ingestion loop off the network.
@@ -227,10 +231,18 @@ class NflverseProvider:
     async def get_weekly_player_stats(
         self, season: int, *, force_refresh: bool = False
     ) -> pl.DataFrame:
-        """Weekly player statistics for a season."""
+        """Weekly player statistics for a season.
+
+        Published under the ``stats_player`` release as
+        ``stats_player_week_{season}.parquet``. The older ``player_stats`` tag
+        still exists but stops before the current seasons - requesting 2025
+        there returns a 404 - so this deliberately reads the maintained one.
+
+        Keyed by ``player_id``, which holds a ``gsis_id`` despite the name.
+        """
         self._require_season(season, WEEKLY_STATS_SEASONS, "player_stats")
         return await self._read_parquet(
-            NflverseAsset("player_stats", f"player_stats_{season}.parquet"),
+            NflverseAsset("stats_player", f"stats_player_week_{season}.parquet"),
             force_refresh=force_refresh,
         )
 

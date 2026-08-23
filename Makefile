@@ -70,9 +70,10 @@ migrate: ## Apply database migrations
 migration: ## Generate a migration: make migration m="describe the change"
 	./.venv/bin/alembic revision --autogenerate -m "$(m)"
 
-ingest: ## Sync players, then backfill injury history
+ingest: ## Sync players, then backfill injuries and workload
 	$(PYTHON) -m fhe.cli ingest players
 	$(PYTHON) -m fhe.cli ingest injuries --seasons 2023,2024,2025
+	$(PYTHON) -m fhe.cli ingest workload --seasons 2024,2025
 
 seed: ## Create the schema and load demo data
 	$(PYTHON) -m fhe.cli seed

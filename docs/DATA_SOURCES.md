@@ -116,6 +116,17 @@ Sleeper's own `search_rank`:
 `gsis_id` is the key nflverse is built on, and Sleeper has it for a fifth of the
 players that matter. That single measurement is why the crosswalk below exists.
 
+### Identifier enrichment
+
+Identifiers are harvested from **both** the crosswalk and nflverse's own player
+table, rather than stopping once a player is resolved. Returning early on a
+direct `gsis_id` match used to discard everything else, which mattered
+concretely: `pfr_id` coverage sat at 37% and snap counts — the one dataset keyed
+on it — could not join for 2,336 in-scope players in a single season.
+
+Merging both sources lifted `pfr_id` coverage to **69.9%** and cut unresolved
+snap-count rows from 2,336 to **38**.
+
 ---
 
 ## nflverse
@@ -135,14 +146,24 @@ production path reads the published Parquet assets directly from Python.
 
 ### Coverage, verified by enumerating the releases API
 
-| Dataset | Tag | Seasons available |
-| --- | --- | --- |
-| Injuries | `injuries` | **2009 – 2025** |
-| Snap counts | `snap_counts` | 2012 – 2025 |
-| Depth charts | `depth_charts` | 2001 – 2026 |
-| Rosters | `rosters` | 1920 – 2026 |
-| Weekly player stats | `player_stats` | 1999 – 2026 |
-| Players (identity) | `players` | single file, rebuilt daily |
+| Dataset | Tag | Asset | Seasons available |
+| --- | --- | --- | --- |
+| Injuries | `injuries` | `injuries_{season}.parquet` | **2009 – 2025** |
+| Snap counts | `snap_counts` | `snap_counts_{season}.parquet` | 2012 – 2025 |
+| Depth charts | `depth_charts` | `depth_charts_{season}.parquet` | 2001 – 2026 |
+| Rosters | `rosters` | `roster_{season}.parquet` | 1920 – 2026 |
+| Weekly player stats | **`stats_player`** | `stats_player_week_{season}.parquet` | 1999 – 2025 |
+| Players (identity) | `players` | `players.parquet` | rebuilt daily |
+
+> **Weekly stats moved.** The legacy `player_stats` release still exists and still
+> lists `player_stats_{season}.parquet` assets, but it stops before the current
+> seasons — `player_stats_2025.parquet` returns **404**, while
+> `stats_player/stats_player_week_2025.parquet` is present and complete (19,422
+> rows). Reading the legacy tag would silently yield nothing for recent seasons.
+
+> **Snap counts use a different join key.** They are keyed by
+> **`pfr_player_id`**, not `gsis_id` like every other dataset here. Weekly stats
+> use `player_id`, which despite the name holds a `gsis_id`.
 
 > **Correction to the build directive.** The directive states that nflverse
 > injury data "currently ends after the 2024 season because the upstream injury
