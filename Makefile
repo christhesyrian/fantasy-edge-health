@@ -13,7 +13,8 @@ NPM    ?= npm
 
 .DEFAULT_GOAL := help
 .PHONY: help setup dev dev-api dev-web test test-py test-web test-live lint format \
-        typecheck quality migrate migration seed ingest simulate build clean up down logs
+        typecheck quality quality-data migrate migration seed ingest simulate build \
+        clean up down logs
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
@@ -74,6 +75,9 @@ ingest: ## Sync players, then backfill injuries and workload
 	$(PYTHON) -m fhe.cli ingest players
 	$(PYTHON) -m fhe.cli ingest injuries --seasons 2023,2024,2025
 	$(PYTHON) -m fhe.cli ingest workload --seasons 2024,2025
+
+quality-data: ## Run data-quality checks against the database
+	$(PYTHON) -m fhe.cli quality
 
 seed: ## Create the schema and load demo data
 	$(PYTHON) -m fhe.cli seed

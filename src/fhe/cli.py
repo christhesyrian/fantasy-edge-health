@@ -153,6 +153,31 @@ async def _ingest_workload(settings: Settings, seasons: Sequence[int]) -> int:
     return 1 if failures else 0
 
 
+async def _quality(settings: Settings) -> int:
+    """Run every data-quality check and report."""
+    from fhe.data.quality import run_quality_checks, summarise
+    from fhe.db import create_engine, create_session_factory
+
+    await _create_schema(settings)
+    engine = create_engine(settings)
+    factory = create_session_factory(engine)
+    try:
+        results = await run_quality_checks(factory)
+    finally:
+        await engine.dispose()
+
+    print(summarise(results))
+    blocking = [r for r in results if r.is_blocking]
+    print(
+        f"\n{len(results)} checks, "
+        f"{sum(1 for r in results if not r.passed)} failed, "
+        f"{len(blocking)} blocking"
+    )
+    # A blocking failure means something downstream will be misleading, so the
+    # exit code reflects it and a scheduled run can alert on it.
+    return 1 if blocking else 0
+
+
 def _simulate(seed: int, rounds: int, slot: int, teams: int) -> int:
     """Run a headless mock draft and print the resulting board.
 
@@ -261,6 +286,7 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--rounds", type=int, default=15)
 
     subcommands.add_parser("seed", help="Create the database schema")
+    subcommands.add_parser("quality", help="Run data-quality checks")
 
     return parser
 
@@ -283,6 +309,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _simulate(args.seed, args.rounds, args.slot, args.teams)
     if args.command == "seed":
         return asyncio.run(_seed(settings))
+    if args.command == "quality":
+        return asyncio.run(_quality(settings))
 
     # argparse rejects an unknown command before reaching here; this exists so
     # a new subcommand added without a branch fails loudly rather than silently
