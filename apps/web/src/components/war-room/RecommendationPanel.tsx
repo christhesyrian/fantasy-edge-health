@@ -148,7 +148,9 @@ export function RecommendationPanel({
         <span className="rail-label">Why this score</span>
         <ul className="mt-1.5 space-y-1">
           {pick.components.map((component) => {
-            const width = (Math.abs(component.points) / maxMagnitude) * 100;
+            // Each side of the zero line is half the track, so a
+            // max-magnitude component fills its half exactly.
+            const half = (Math.abs(component.points) / maxMagnitude) * 50;
             const positive = component.points >= 0;
             return (
               <li key={component.name} className="group">
@@ -167,15 +169,19 @@ export function RecommendationPanel({
                     {signed(component.points, 1)}
                   </span>
                 </div>
-                <div className="mt-1 h-[3px] w-full bg-[var(--surface-row-alt)]">
+                {/* Diverging bar: contributions push right (adds to the
+                    score) or left (subtracts), so the direction of each
+                    component's effect reads at a glance. */}
+                <div className="relative mt-1 h-[6px] w-full bg-[var(--surface-row-alt)]">
+                  <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[var(--hairline-bright)]" />
                   <div
                     className={cn(
-                      "h-full transition-[width] duration-500",
+                      "absolute inset-y-0 transition-[width] duration-500",
                       positive
-                        ? "bg-[var(--color-go-500)]"
-                        : "bg-[var(--color-hazard-500)]",
+                        ? "left-1/2 bg-[var(--color-go-500)]"
+                        : "right-1/2 bg-[var(--color-hazard-500)]",
                     )}
-                    style={{ width: `${width}%` }}
+                    style={{ width: `${half}%` }}
                   />
                 </div>
                 <p className="mt-0.5 text-[0.7rem] leading-snug text-[var(--text-muted)]">

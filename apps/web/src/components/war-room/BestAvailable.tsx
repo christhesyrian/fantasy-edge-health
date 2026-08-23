@@ -190,11 +190,11 @@ export function BestAvailable({
                     index % 2 === 1 && "bg-[var(--surface-row-alt)]",
                     row.recommendation === "AVOID" && "hazard-stripe",
                     isSelected
-                      ? "bg-[color-mix(in_oklab,var(--accent)_14%,transparent)]"
+                      ? "bg-[color-mix(in_oklab,var(--accent)_22%,transparent)]"
                       : "hover:bg-[color-mix(in_oklab,var(--accent)_7%,transparent)]",
                   )}
                 >
-                  <td className="tabular px-1.5 py-1.5 text-right text-[var(--text-muted)]">
+                  <td className="tabular px-1.5 py-1.5 text-right text-[var(--text-secondary)]">
                     {row.model_rank}
                   </td>
                   <td className="px-1.5 py-1.5">
@@ -217,7 +217,7 @@ export function BestAvailable({
                       {row.position}
                     </span>
                   </td>
-                  <td className="tabular px-1.5 py-1.5 text-right text-[var(--accent)]">
+                  <td className="tabular px-1.5 py-1.5 text-right text-[0.86rem] font-semibold text-[var(--accent)]">
                     {num(row.overall_score, 1)}
                   </td>
                   <td className="tabular px-1.5 py-1.5 text-right text-[var(--text-secondary)]">
@@ -249,13 +249,19 @@ export function BestAvailable({
                   >
                     {pct(survival)}
                   </td>
-                  <td
-                    className={cn(
-                      "display px-1.5 py-1.5 text-[0.65rem]",
-                      verdict?.className,
+                  <td className="px-1.5 py-1.5">
+                    {verdict ? (
+                      <span
+                        className={cn(
+                          "display inline-block border px-1 py-0.5 text-[0.6rem] leading-none",
+                          verdict.className,
+                        )}
+                      >
+                        {verdict.text}
+                      </span>
+                    ) : (
+                      <span className="text-[var(--text-muted)]">—</span>
                     )}
-                  >
-                    {verdict?.text ?? "—"}
                   </td>
                   <td className="px-1.5 py-1.5">
                     <div className="flex items-center justify-end gap-1">
