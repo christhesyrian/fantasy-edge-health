@@ -23,6 +23,7 @@ from fhe.api.routers import (
     health,
     imports,
     leagues,
+    players,
     simulations,
     sleeper,
 )
@@ -139,6 +140,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(leagues.router, prefix=API_PREFIX)
     app.include_router(imports.router, prefix=API_PREFIX)
     app.include_router(diagnostics.router, prefix=API_PREFIX)
+    app.include_router(players.router, prefix=API_PREFIX)
     app.include_router(sleeper.router, prefix=API_PREFIX)
 
     return app

@@ -239,6 +239,20 @@ class LeagueSettingsOut(ApiModel):
     replacement_ranks: dict[str, int] = Field(default_factory=dict)
 
 
+class PlayerPage(ApiModel):
+    """One page of players, for screens that are not scoped to a draft."""
+
+    total: int = Field(description="Players matching the filters, before paging.")
+    offset: int
+    limit: int
+    players: list[PlayerDetail] = Field(default_factory=list)
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Gaps in the underlying data that limit what these records can say.",
+    )
+    environment: str
+
+
 class DraftBoardOut(ApiModel):
     """The complete war-room view for one moment in a draft."""
 
