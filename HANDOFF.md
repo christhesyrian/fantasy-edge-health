@@ -53,7 +53,7 @@ Frontend only, no Python:
 | Python | **3.14.3** at `/opt/homebrew/bin/python3.14`. Bare `python3` is Anaconda **3.9** — never use it. |
 | venv | `./.venv`. **Always invoke `./.venv/bin/python`.** |
 | Node | v25.6.0, npm 11.12.0. No pnpm. npm workspaces from the repo root. |
-| Docker | Installed; **daemon has never run on this machine**. Compose remains completely unverified. |
+| Docker | 29.7.2, Compose v5.3.1. First build attempted 2026-08-23; blocked by a **full host disk** (981 MiB free of 228 GiB), which crashed the daemon. Stack has never come up. |
 | Postgres / Redis | Not installed natively — hence the fallbacks. |
 
 ---
@@ -155,14 +155,22 @@ Each has a regression test named after the symptom.
 17. **Preview fixtures ignored the requested pick count.** `advance(1)` walked
     all the way to the user's turn instead of stepping one pick, so preview did
     not match the endpoint it was standing in for.
+18. **`apps/web/package-lock.json` was out of sync**, so `npm ci` failed with
+    `EUSAGE` and the web container could not build — and a v0 import rooted at
+    `apps/web` would have hit the same wall. npm workspaces is the trap: running
+    `npm install` anywhere inside the repo writes the *root* lockfile and leaves
+    the frontend's own one to rot. It must be regenerated in isolation.
 
 ---
 
 ## 5. What is NOT built — resume here
 
 ### Next
-- **Docker Compose verification** — still never run; the daemon has never been
-  available. This is the only part of the repository that has never executed.
+- **Docker Compose verification** — the build was attempted for the first time
+  on 2026-08-23 and found a real break (see bug 18). It then stopped because the
+  host disk was 100% full. The stack has still never come *up*: no containerised
+  migration, no health check against PostgreSQL, no SSE. Free disk, then
+  `docker compose up --build`.
 - **Dedicated rankings and health-centre pages.** `GET /api/v1/players` and
   `GET /api/v1/players/{uuid}` were added for exactly this and are tested; the
   routes themselves are deliberately left to the frontend pass.

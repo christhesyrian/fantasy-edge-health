@@ -9,36 +9,58 @@ do, and what it unlocks.
 
 ---
 
-## 1. Start Docker Desktop — OPTIONAL
+## 1. Free disk space, then verify the Docker stack — REQUIRED to finish
+   Compose verification
 
-**Why:** the Docker daemon has never been running on this machine, so
-`docker compose` has never been executed. The Compose stack (PostgreSQL, Redis,
-MinIO, migrations, API, web) is written, has health checks and a dedicated
-migrate service, and is **completely unverified**. It is the only part of the
-repository that has never been run.
+**Why:** Docker Desktop was started on 2026-08-23 and `docker compose build`
+was run for the first time. It got further than ever before and then stopped
+for a reason that has nothing to do with this project: **the disk is full.**
 
-Without it, the app falls back to a local SQLite file and an in-process event
-bus. Both work, and both are reported at startup and on `/api/v1/health` so
-they can never be mistaken for a real deployment.
+```
+/System/Volumes/Data   228Gi total   981Mi free   100% capacity
+```
 
-**What to do:** launch Docker Desktop, wait for the whale icon to settle, then:
+BuildKit could not write `/var/lib/docker/buildkit/metadata_v2.db`
+(`input/output error`), and the daemon then stopped responding entirely. Docker
+itself is holding about 6.9 GB.
+
+**What that run did establish:** the `web` image was genuinely broken and is now
+fixed. `npm ci` failed with `EUSAGE` because `apps/web/package-lock.json` was
+missing `@playwright/test`, `playwright`, `playwright-core`, and `fsevents`.
+That is repaired, and `npm ci --dry-run` now resolves cleanly. The `postgres`,
+`redis`, and `minio` images pulled; the API and worker images were building when
+the disk gave out.
+
+**What is still unverified:** the stack has never come *up*. No migration has
+run in a container, no health endpoint has been checked against PostgreSQL, and
+no SSE update has been exercised through it.
+
+**What to do:** free several GB — the usual suspects are `~/Library/Caches`,
+old Xcode simulators (`xcrun simctl delete unavailable`), and Docker's own
+data. Then restart Docker Desktop and confirm it answers:
 
 ```bash
 docker info --format '{{.ServerVersion}}'
 ```
 
-Once it answers, bring the stack up and exercise it:
+Reclaim Docker's own space first, since it needs no judgement about your files:
+
+```bash
+docker builder prune -af && docker image prune -af
+```
+
+Then bring the stack up and exercise it:
 
 ```bash
 docker compose up --build
 ```
 
-Then check `http://localhost:8000/api/v1/health/ready` reports ready with an
+Check `http://localhost:8000/api/v1/health/ready` reports ready with an
 **empty** `degradations` array — that is the proof it is on PostgreSQL and Redis
-rather than the fallbacks.
+rather than the SQLite and in-process fallbacks.
 
-**Unlocks:** a production-shaped local stack, and the first real verification of
-the container images. Also the only way to get PostgreSQL performance numbers;
+**Unlocks:** a production-shaped local stack, the first real verification of the
+container images, and the only way to get PostgreSQL performance numbers;
 everything in `docs/PERFORMANCE.md` is currently SQLite.
 
 ---
