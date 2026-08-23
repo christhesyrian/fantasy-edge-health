@@ -9,7 +9,7 @@ always be shown as the arithmetic that produced it. A multiplicative or learned
 blend might fit marginally better and would be impossible to defend in ten
 seconds.
 
-    overall = w_vorp     * vorp_normalised
+    overall = w_vorp     * vorp_normalised          (signed: [-1, 1])
             + w_scarcity * positional_scarcity
             + w_need     * roster_need
             + w_adp      * adp_value_normalised
@@ -156,10 +156,17 @@ def _clamp01(value: float) -> float:
 
 
 def _normalise_vorp(vorp: float | None, max_vorp: float) -> float:
-    """Scale VORP into ``[0, 1]`` against the best player on the board."""
+    """Scale VORP into ``[-1, 1]`` against the best player in the pre-draft pool.
+
+    The range is signed rather than clamped at zero. Flattening every
+    sub-replacement player to 0.0 removed all ordering from the heaviest
+    component, which left the ADP term deciding their relative order — and since
+    that term rewards falling, the worst player at a position outscored the best
+    one. A quarterback 124 points *below* the baseline outranked QB1.
+    """
     if vorp is None or max_vorp <= 0:
         return 0.0
-    return _clamp01(vorp / max_vorp)
+    return max(-1.0, min(1.0, vorp / max_vorp))
 
 
 def _score_player(
@@ -182,7 +189,8 @@ def _score_player(
                 label="Value over replacement",
                 points=round(W_VORP * vorp_norm, 2),
                 detail=(
-                    f"{vorp:+.1f} projected points above the "
+                    f"{abs(vorp):.1f} projected points "
+                    f"{'above' if vorp >= 0 else 'below'} the "
                     f"{player.position.value}"
                     f"{context.baseline.replacement_rank.get(player.position, 0)} baseline."
                 ),

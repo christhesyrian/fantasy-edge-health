@@ -136,6 +136,44 @@ class TestPositionalSanity:
         assert recs[0].player_uuid == "elite"
         assert recs[0].overall_score > recs[-1].overall_score + 20
 
+    def test_a_deeply_sub_replacement_player_cannot_win_on_market_signal(
+        self, league: LeagueSettings
+    ) -> None:
+        """A faller far below replacement must not outrank the best at his slot.
+
+        Regression: the value component was clamped at zero, so every
+        sub-replacement player scored an identical 0.0 on the heaviest term and
+        the ADP term — which rewards falling — decided their order. A
+        quarterback 124 points below the baseline outranked QB1.
+        """
+        best = make_player("qb-best", Position.QB, projected_points=395.0, adp=30.0)
+        # Deep bench quarterback the market has all but forgotten.
+        forgotten = make_player("qb-forgotten", Position.QB, projected_points=190.0, adp=263.0)
+        filler = [
+            make_player(f"qb{i}", Position.QB, projected_points=380.0 - i * 7.0, adp=40.0 + i)
+            for i in range(30)
+        ]
+        recs = rank_board(build_context([best, forgotten, *filler], league))
+        by_uuid = {r.player_uuid: r for r in recs}
+
+        assert by_uuid["qb-forgotten"].adp_value is not None
+        assert by_uuid["qb-forgotten"].adp_value > 0, "the setup must give him a faller bonus"
+        assert by_uuid["qb-best"].overall_score > by_uuid["qb-forgotten"].overall_score
+
+    def test_value_component_is_signed_below_replacement(self, league: LeagueSettings) -> None:
+        """Being below replacement costs points rather than merely earning none."""
+        players = [
+            make_player(f"rb{i}", Position.RB, projected_points=300.0 - i * 5.0, adp=float(i + 1))
+            for i in range(40)
+        ]
+        recs = rank_board(build_context(players, league))
+        worst = recs[-1]
+        value = next(c for c in worst.components if c.name == "value_over_replacement")
+
+        assert worst.vorp is not None and worst.vorp < 0
+        assert value.points < 0
+        assert "below" in (value.detail or "")
+
 
 class TestHealthAdjustment:
     def test_injury_risk_lowers_a_players_score(self, league: LeagueSettings) -> None:
