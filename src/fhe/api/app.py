@@ -17,8 +17,17 @@ from fhe import __version__
 from fhe.api.errors import register_error_handlers
 from fhe.api.events import create_event_bus
 from fhe.api.middleware import RequestContextMiddleware
-from fhe.api.routers import diagnostics, health, imports, simulations, sleeper
+from fhe.api.routers import (
+    diagnostics,
+    drafts,
+    health,
+    imports,
+    leagues,
+    simulations,
+    sleeper,
+)
 from fhe.api.services.draft_session import DraftSessionRegistry
+from fhe.api.services.poller_manager import PollerManager
 from fhe.config import Settings, get_settings
 from fhe.core.simulation import generate_player_pool
 from fhe.db import create_engine, create_session_factory
@@ -34,6 +43,10 @@ Injury-adjusted fantasy football draft intelligence.
 **Demo mode needs no credentials.** `POST /api/v1/simulations` starts a mock
 draft against a deterministic synthetic player pool, and every board it returns
 is produced by the same engine a live Sleeper draft uses.
+
+**A draft is a draft.** Reading the board, streaming events, and inspecting a
+player all live under `/api/v1/drafts/{id}` and behave identically whether picks
+arrive from a Sleeper poller or from the simulator.
 
 Every score is decomposable: a recommendation's `components` always sum to its
 `overall_score`, so the arithmetic behind a number is part of the response
@@ -60,7 +73,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     event_bus = create_event_bus(settings.redis_url or None)
     app.state.event_bus = event_bus
-    app.state.registry = DraftSessionRegistry(event_bus)
+    registry = DraftSessionRegistry(event_bus)
+    app.state.registry = registry
+    app.state.poller_manager = PollerManager(settings, registry)
 
     # Generated once at startup: it is deterministic, costs a moment, and makes
     # demo mode instant on first request.
@@ -76,6 +91,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        # Stop pollers before the bus, so no task publishes into a closed bus.
+        await app.state.poller_manager.stop_all()
         await event_bus.aclose()
         await engine.dispose()
         log.info("api_stopped")
@@ -117,7 +134,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_error_handlers(app)
 
     app.include_router(health.router, prefix=API_PREFIX)
+    app.include_router(drafts.router, prefix=API_PREFIX)
     app.include_router(simulations.router, prefix=API_PREFIX)
+    app.include_router(leagues.router, prefix=API_PREFIX)
     app.include_router(imports.router, prefix=API_PREFIX)
     app.include_router(diagnostics.router, prefix=API_PREFIX)
     app.include_router(sleeper.router, prefix=API_PREFIX)

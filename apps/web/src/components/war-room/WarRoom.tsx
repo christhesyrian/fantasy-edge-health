@@ -41,6 +41,10 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
     refetchOnWindowFocus: true,
   });
 
+  // Simulator-only actions are gated on this. Defaults to true so the very
+  // first render of a demo behaves normally; a live board flips it on arrival.
+  const isDemo = boardQuery.data?.is_demo ?? true;
+
   const refetchBoard = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["board", simulationId] });
   }, [queryClient, simulationId]);
@@ -98,14 +102,16 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
 
-      if (event.key === "n") advance.mutate(1);
-      if (event.key === "a") advance.mutate(500);
-      if (event.key === "Enter" && selectedUuid) draft.mutate(selectedUuid);
+      // Advancing and drafting are simulator actions. On a live draft the room
+      // makes the picks, so these keys do nothing rather than 409.
+      if (isDemo && event.key === "n") advance.mutate(1);
+      if (isDemo && event.key === "a") advance.mutate(500);
+      if (isDemo && event.key === "Enter" && selectedUuid) draft.mutate(selectedUuid);
       if (event.key === "i" && selectedUuid) setInspectUuid(selectedUuid);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [advance, draft, selectedUuid]);
+  }, [advance, draft, selectedUuid, isDemo]);
 
   if (boardQuery.isLoading) {
     return (
@@ -168,6 +174,24 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
         </div>
       ) : null}
 
+      {board.warnings.length > 0 ? (
+        <details className="shrink-0 border-b border-[var(--color-hold-400)] bg-[color-mix(in_oklab,var(--color-hold-400)_9%,transparent)] px-4 py-1.5">
+          <summary className="rail-label cursor-pointer text-[var(--color-hold-400)]">
+            This board is missing data · {board.warnings.length}
+          </summary>
+          <ul className="mt-1.5 space-y-0.5 pb-1">
+            {board.warnings.map((warning) => (
+              <li
+                key={warning}
+                className="text-[0.75rem] leading-snug text-[var(--text-secondary)]"
+              >
+                — {warning}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+
       <div className="shrink-0 border-b">
         <AlertRail alerts={board.alerts} onFocusPlayer={setSelectedUuid} />
       </div>
@@ -179,33 +203,41 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
           className="min-h-0"
           bodyClassName="p-0"
           actions={
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => advance.mutate(1)}
-                disabled={advance.isPending || board.status === "complete"}
-                className="rail-label border px-2 py-1 transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
-                title="Advance one pick (n)"
-              >
-                Next ·&nbsp;n
-              </button>
-              <button
-                type="button"
-                onClick={() => advance.mutate(500)}
-                disabled={advance.isPending || board.is_user_on_the_clock}
-                className="rail-label border px-2 py-1 transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
-                title="Run to your next pick (a)"
-              >
-                To my pick ·&nbsp;a
-              </button>
-              <button
-                type="button"
-                onClick={() => reset.mutate()}
-                className="rail-label border px-2 py-1 transition-colors hover:border-[var(--color-hazard-400)] hover:text-[var(--color-hazard-400)]"
-              >
-                Reset
-              </button>
-            </div>
+            board.is_demo ? (
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => advance.mutate(1)}
+                  disabled={advance.isPending || board.status === "complete"}
+                  className="rail-label border px-2 py-1 transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
+                  title="Advance one pick (n)"
+                >
+                  Next ·&nbsp;n
+                </button>
+                <button
+                  type="button"
+                  onClick={() => advance.mutate(500)}
+                  disabled={advance.isPending || board.is_user_on_the_clock}
+                  className="rail-label border px-2 py-1 transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
+                  title="Run to your next pick (a)"
+                >
+                  To my pick ·&nbsp;a
+                </button>
+                <button
+                  type="button"
+                  onClick={() => reset.mutate()}
+                  className="rail-label border px-2 py-1 transition-colors hover:border-[var(--color-hazard-400)] hover:text-[var(--color-hazard-400)]"
+                >
+                  Reset
+                </button>
+              </div>
+            ) : (
+              // A live draft advances because the room picks, not because we
+              // ask it to. Showing controls that cannot work would be a lie.
+              <span className="rail-label text-[var(--color-go-400)]">
+                Following Sleeper
+              </span>
+            )
           }
         >
           <BestAvailable
@@ -290,7 +322,8 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
           n next · a to my pick · enter draft selected · i inspect · esc close
         </span>
         <span className="rail-label ml-auto">
-          {board.provenance.map((entry) => entry.source).join(" · ") || "no sources"}
+          {board.provenance.map((entry) => entry.source).join(" · ") ||
+            "no projection or ADP source"}
         </span>
       </footer>
 

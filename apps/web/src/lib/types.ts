@@ -181,6 +181,7 @@ export const draftBoardSchema = z.object({
   computed_at: z.string(),
   computation_ms: z.number().nullable().optional(),
   provenance: z.array(provenanceSchema).default([]),
+  warnings: z.array(z.string()).default([]),
 });
 
 export const simulationStateSchema = z.object({
@@ -193,6 +194,90 @@ export const simulationStateSchema = z.object({
   is_complete: z.boolean(),
   is_user_on_the_clock: z.boolean(),
   created_at: z.string(),
+});
+
+export const pollerStatusSchema = z.object({
+  state: z.string(),
+  poll_count: z.number(),
+  picks_observed: z.number(),
+  consecutive_failures: z.number(),
+  is_stale: z.boolean(),
+  last_success_at: z.string().nullable().optional(),
+  last_error: z.string().nullable().optional(),
+  seconds_since_success: z.number().nullable().optional(),
+});
+
+export const draftStateSchema = z.object({
+  draft_id: z.string(),
+  is_demo: z.boolean(),
+  status: z.string(),
+  pick_count: z.number(),
+  total_picks: z.number(),
+  current_pick: z.number().nullable().optional(),
+  is_complete: z.boolean(),
+  is_user_on_the_clock: z.boolean(),
+  user_draft_slot: z.number().nullable().optional(),
+  created_at: z.string(),
+  poller: pollerStatusSchema.nullable().optional(),
+});
+
+export const nflStateSchema = z.object({
+  season: z.string(),
+  season_type: z.string(),
+  week: z.number(),
+});
+
+export const sleeperUserSchema = z.object({
+  user_id: z.string(),
+  username: z.string().nullable().optional(),
+  display_name: z.string().nullable().optional(),
+});
+
+export const sleeperLeagueSchema = z.object({
+  league_id: z.string(),
+  name: z.string(),
+  season: z.string(),
+  status: z.string(),
+  total_rosters: z.number(),
+  scoring_format: z.string(),
+  roster_positions: z.array(z.string()),
+  draft_id: z.string().nullable().optional(),
+  is_superflex: z.boolean().default(false),
+});
+
+export const sleeperDraftSchema = z.object({
+  draft_id: z.string(),
+  league_id: z.string().nullable().optional(),
+  status: z.string(),
+  draft_type: z.string(),
+  season: z.string(),
+  team_count: z.number().nullable().optional(),
+  rounds: z.number().nullable().optional(),
+  scoring_type: z.string().nullable().optional(),
+  start_time_ms: z.number().nullable().optional(),
+  user_draft_slot: z.number().nullable().optional(),
+});
+
+export const poolProvenanceSchema = z.object({
+  player_count: z.number(),
+  with_projection: z.number(),
+  with_adp: z.number(),
+  with_health: z.number(),
+  projection_sources: z.array(z.string()).default([]),
+  adp_sources: z.array(z.string()).default([]),
+  warnings: z.array(z.string()).default([]),
+});
+
+export const connectedDraftSchema = z.object({
+  draft_id: z.string(),
+  league_id: z.string(),
+  league_name: z.string(),
+  status: z.string(),
+  user_draft_slot: z.number().nullable().optional(),
+  picks_already_made: z.number(),
+  following: z.boolean(),
+  league: leagueSettingsSchema,
+  pool: poolProvenanceSchema,
 });
 
 export const healthStatusSchema = z.object({
@@ -217,6 +302,14 @@ export type TeamRoster = z.infer<typeof teamRosterSchema>;
 export type DraftPick = z.infer<typeof draftPickSchema>;
 export type DraftBoard = z.infer<typeof draftBoardSchema>;
 export type SimulationState = z.infer<typeof simulationStateSchema>;
+export type DraftState = z.infer<typeof draftStateSchema>;
+export type PollerStatus = z.infer<typeof pollerStatusSchema>;
+export type NflState = z.infer<typeof nflStateSchema>;
+export type SleeperUser = z.infer<typeof sleeperUserSchema>;
+export type SleeperLeague = z.infer<typeof sleeperLeagueSchema>;
+export type SleeperDraft = z.infer<typeof sleeperDraftSchema>;
+export type PoolProvenance = z.infer<typeof poolProvenanceSchema>;
+export type ConnectedDraft = z.infer<typeof connectedDraftSchema>;
 export type HealthStatus = z.infer<typeof healthStatusSchema>;
 
 /** Real-time transport state shown in the top rail. */

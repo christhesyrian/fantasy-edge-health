@@ -53,7 +53,12 @@ class SessionNotFoundError(LookupError):
 
 @dataclass
 class DraftSession:
-    """One live or simulated draft, with everything needed to evaluate it."""
+    """One live or simulated draft, with everything needed to evaluate it.
+
+    Mutable on purpose: a live draft's state advances underneath it, and a
+    reconnect refreshes the pool without replacing the session identity that
+    subscribers and the poller are attached to.
+    """
 
     session_id: str
     league: LeagueSettings
@@ -65,6 +70,13 @@ class DraftSession:
     state: DraftState | None = None
     created_at: datetime = field(default_factory=utcnow)
     last_touched_at: datetime = field(default_factory=utcnow)
+    # The provider's own word on whether the draft is finished. A draft can end
+    # before every slot is filled - abandoned, or shortened - so pick arithmetic
+    # alone would keep reporting it as live forever.
+    provider_status: str | None = None
+    # Gaps in the underlying data, surfaced on the board so a user is never
+    # shown a confident ranking built on nothing.
+    pool_warnings: tuple[str, ...] = field(default=())
     last_board: DraftBoard | None = None
     last_computation_ms: float | None = None
 
@@ -88,6 +100,17 @@ class DraftSession:
         if self.simulator is not None:
             return self.simulator.user_draft_slot
         return self.league.user_draft_slot
+
+    @property
+    def is_complete(self) -> bool:
+        """Whether the draft is over.
+
+        The provider's status wins when it has one: it knows about drafts that
+        ended early, which pick arithmetic cannot infer.
+        """
+        if self.provider_status:
+            return self.provider_status.lower() == "complete"
+        return self.draft_state.is_complete
 
     @property
     def is_user_on_the_clock(self) -> bool:
@@ -131,9 +154,77 @@ class DraftSessionRegistry:
         return self._bus
 
     @property
+    def sequence(self) -> SequenceCounter:
+        """Shared event sequence counter.
+
+        Exposed so an external publisher - the live poller - numbers its events
+        on the same sequence as the registry's own, which is what lets a client
+        detect a gap across both.
+        """
+        return self._sequence
+
+    @property
     def count(self) -> int:
         """How many sessions are held."""
         return len(self._sessions)
+
+    def register_live(
+        self,
+        *,
+        session_id: str,
+        league: LeagueSettings,
+        pool: tuple[DraftablePlayer, ...],
+        state: DraftState,
+        baseline: ReplacementBaseline,
+        provider_status: str | None = None,
+        pool_warnings: tuple[str, ...] = (),
+    ) -> DraftSession:
+        """Register a session backed by a live provider draft.
+
+        Keyed by the provider's own draft id rather than a fresh uuid, so
+        reconnecting to the same draft resumes the existing session instead of
+        creating a second one that would poll the provider twice.
+        """
+        existing = self._sessions.get(session_id)
+        if existing is not None:
+            # Refresh state and pool, since both may have moved on, but keep the
+            # session identity that subscribers and the poller are attached to.
+            existing.state = state
+            existing.pool = pool
+            existing.baseline = baseline
+            existing.provider_status = provider_status
+            existing.pool_warnings = pool_warnings
+            existing.last_touched_at = utcnow()
+            log.info("live_session_refreshed", session_id=session_id)
+            return existing
+
+        self._evict_if_needed()
+        session = DraftSession(
+            session_id=session_id,
+            league=league,
+            pool=pool,
+            baseline=baseline,
+            is_demo=False,
+            state=state,
+            provider_status=provider_status,
+            pool_warnings=pool_warnings,
+        )
+        self._sessions[session_id] = session
+        log.info(
+            "live_session_registered",
+            session_id=session_id,
+            team_count=league.team_count,
+            picks=state.pick_count,
+        )
+        return session
+
+    async def publish_board_update(self, session: DraftSession) -> None:
+        """Recompute and announce a board change for an externally-driven draft.
+
+        The live poller owns draft state; this is how it asks the session to
+        re-evaluate and tell its subscribers.
+        """
+        await self._publish_board(session)
 
     async def create_simulation(
         self,

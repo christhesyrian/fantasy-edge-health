@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from fhe.api.events import EventBus
 from fhe.api.services.draft_session import DraftSessionRegistry
+from fhe.api.services.poller_manager import PollerManager
 from fhe.config import Settings
 from fhe.core.draft.models import DraftablePlayer
 
@@ -36,6 +37,12 @@ def get_registry(request: Request) -> DraftSessionRegistry:
     """The draft session registry."""
     registry: DraftSessionRegistry = request.app.state.registry
     return registry
+
+
+def get_poller_manager(request: Request) -> PollerManager:
+    """The live draft poller supervisor."""
+    manager: PollerManager = request.app.state.poller_manager
+    return manager
 
 
 def get_demo_pool(request: Request) -> tuple[DraftablePlayer, ...]:
@@ -76,6 +83,7 @@ async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
 SettingsDep = Annotated[Settings, Depends(get_settings_dep)]
 EventBusDep = Annotated[EventBus, Depends(get_event_bus)]
 RegistryDep = Annotated[DraftSessionRegistry, Depends(get_registry)]
+PollerManagerDep = Annotated[PollerManager, Depends(get_poller_manager)]
 DemoPoolDep = Annotated[tuple[DraftablePlayer, ...], Depends(get_demo_pool)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 SessionFactoryDep = Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)]

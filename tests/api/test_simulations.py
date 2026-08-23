@@ -75,7 +75,7 @@ class TestBoard:
         self, client: httpx.AsyncClient, simulation: str
     ) -> None:
         """Never present an opaque score: the arithmetic ships with the number."""
-        board = (await client.get(f"/api/v1/simulations/{simulation}/board")).json()
+        board = (await client.get(f"/api/v1/drafts/{simulation}/board")).json()
         best = board["best_pick"]
         assert best is not None
         assert best["reasons"]
@@ -86,7 +86,7 @@ class TestBoard:
     async def test_board_reports_its_own_provenance_and_demo_status(
         self, client: httpx.AsyncClient, simulation: str
     ) -> None:
-        board = (await client.get(f"/api/v1/simulations/{simulation}/board")).json()
+        board = (await client.get(f"/api/v1/drafts/{simulation}/board")).json()
         assert board["is_demo"] is True
         assert board["provenance"]
         assert all(p["source"] == "synthetic-demo" for p in board["provenance"])
@@ -94,21 +94,21 @@ class TestBoard:
     async def test_headline_picks_are_populated(
         self, client: httpx.AsyncClient, simulation: str
     ) -> None:
-        board = (await client.get(f"/api/v1/simulations/{simulation}/board")).json()
+        board = (await client.get(f"/api/v1/drafts/{simulation}/board")).json()
         for key in ("best_pick", "safest_pick", "highest_upside", "best_value"):
             assert board[key] is not None, key
 
     async def test_depth_limits_the_payload(
         self, client: httpx.AsyncClient, simulation: str
     ) -> None:
-        board = (await client.get(f"/api/v1/simulations/{simulation}/board?depth=5")).json()
+        board = (await client.get(f"/api/v1/drafts/{simulation}/board?depth=5")).json()
         assert len(board["recommendations"]) == 5
 
     async def test_kickers_are_not_recommended_in_round_one(
         self, client: httpx.AsyncClient, simulation: str
     ) -> None:
         """Regression, end to end through the API this time."""
-        board = (await client.get(f"/api/v1/simulations/{simulation}/board?depth=40")).json()
+        board = (await client.get(f"/api/v1/drafts/{simulation}/board?depth=40")).json()
         top_positions = {r["position"] for r in board["recommendations"][:40]}
         assert "K" not in top_positions
         assert "DEF" not in top_positions
@@ -116,7 +116,7 @@ class TestBoard:
     async def test_league_settings_expose_replacement_ranks(
         self, client: httpx.AsyncClient, simulation: str
     ) -> None:
-        board = (await client.get(f"/api/v1/simulations/{simulation}/board")).json()
+        board = (await client.get(f"/api/v1/drafts/{simulation}/board")).json()
         ranks = board["league"]["replacement_ranks"]
         assert ranks["QB"] == 12
         assert ranks["RB"] == 29
@@ -130,7 +130,7 @@ class TestDraftFlow:
             f"/api/v1/simulations/{simulation}/advance",
             json={"picks": 4, "stop_at_user_turn": False},
         )
-        picks = (await client.get(f"/api/v1/simulations/{simulation}/board?depth=500")).json()
+        picks = (await client.get(f"/api/v1/drafts/{simulation}/board?depth=500")).json()
         drafted = {p["player"]["player_uuid"] for p in picks["recent_picks"]}
         available = {r["player_uuid"] for r in picks["recommendations"]}
         assert drafted
@@ -143,7 +143,7 @@ class TestDraftFlow:
             f"/api/v1/simulations/{simulation}/advance",
             json={"picks": 50, "stop_at_user_turn": True},
         )
-        board = (await client.get(f"/api/v1/simulations/{simulation}/board")).json()
+        board = (await client.get(f"/api/v1/drafts/{simulation}/board")).json()
         assert board["is_user_on_the_clock"] is True
         target = board["best_pick"]["player_uuid"]
 
@@ -152,7 +152,7 @@ class TestDraftFlow:
         )
         assert response.status_code == 200
 
-        after = (await client.get(f"/api/v1/simulations/{simulation}/board")).json()
+        after = (await client.get(f"/api/v1/drafts/{simulation}/board")).json()
         rostered = {
             slot["player"]["player_uuid"] for slot in after["my_roster"]["lineup"] if slot["player"]
         }
@@ -163,7 +163,7 @@ class TestDraftFlow:
         self, client: httpx.AsyncClient, simulation: str
     ) -> None:
         """The request is well formed; the draft state is what forbids it."""
-        board = (await client.get(f"/api/v1/simulations/{simulation}/board")).json()
+        board = (await client.get(f"/api/v1/drafts/{simulation}/board")).json()
         await client.post(
             f"/api/v1/simulations/{simulation}/advance",
             json={"picks": 1, "stop_at_user_turn": False},
@@ -178,12 +178,12 @@ class TestDraftFlow:
     async def test_recommendations_change_as_the_draft_progresses(
         self, client: httpx.AsyncClient, simulation: str
     ) -> None:
-        before = (await client.get(f"/api/v1/simulations/{simulation}/board")).json()
+        before = (await client.get(f"/api/v1/drafts/{simulation}/board")).json()
         await client.post(
             f"/api/v1/simulations/{simulation}/advance",
             json={"picks": 24, "stop_at_user_turn": False},
         )
-        after = (await client.get(f"/api/v1/simulations/{simulation}/board")).json()
+        after = (await client.get(f"/api/v1/drafts/{simulation}/board")).json()
 
         assert [r["player_uuid"] for r in before["recommendations"][:5]] != [
             r["player_uuid"] for r in after["recommendations"][:5]
@@ -222,9 +222,7 @@ class TestEventStream:
             simulation_id = created.json()["simulation_id"]
 
             frames: list[dict[str, Any]] = []
-            async with client.stream(
-                "GET", f"/api/v1/simulations/{simulation_id}/events"
-            ) as response:
+            async with client.stream("GET", f"/api/v1/drafts/{simulation_id}/events") as response:
                 assert response.status_code == 200
                 assert response.headers["content-type"].startswith("text/event-stream")
 

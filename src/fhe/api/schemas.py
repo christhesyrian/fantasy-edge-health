@@ -266,6 +266,10 @@ class DraftBoardOut(ApiModel):
     computed_at: datetime
     computation_ms: float | None = None
     provenance: list[Provenance] = Field(default_factory=list)
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Gaps in the underlying data that limit what this board can say.",
+    )
 
 
 # --------------------------------------------------------------- simulations
@@ -303,6 +307,83 @@ class SimulationState(ApiModel):
     is_complete: bool
     is_user_on_the_clock: bool
     created_at: datetime
+
+
+class PollerStatusOut(ApiModel):
+    """Health of the live poller following a draft."""
+
+    state: str
+    poll_count: int
+    picks_observed: int
+    consecutive_failures: int
+    is_stale: bool = Field(
+        description="True once repeated failures mean the feed can no longer be trusted."
+    )
+    last_success_at: datetime | None = None
+    last_error: str | None = None
+    seconds_since_success: float | None = None
+
+
+class DraftStateOut(ApiModel):
+    """Lifecycle summary of a draft, live or simulated."""
+
+    draft_id: str
+    is_demo: bool
+    status: str
+    pick_count: int
+    total_picks: int
+    current_pick: int | None = None
+    is_complete: bool
+    is_user_on_the_clock: bool
+    user_draft_slot: int | None = None
+    created_at: datetime
+    poller: PollerStatusOut | None = Field(
+        default=None, description="Present only for a live provider draft."
+    )
+
+
+class ConnectDraftRequest(ApiModel):
+    """Request body for connecting a real Sleeper draft."""
+
+    league_id: str = Field(min_length=1, max_length=64)
+    draft_id: str = Field(min_length=1, max_length=64)
+    user_id: str | None = Field(
+        default=None,
+        description="Resolves which seat is yours, from the draft's own order map.",
+    )
+    follow: bool = Field(
+        default=True,
+        description="Start polling for new picks. Off for reviewing a finished draft.",
+    )
+
+
+class PoolProvenanceOut(ApiModel):
+    """How complete the player pool behind a live draft is."""
+
+    player_count: int
+    with_projection: int
+    with_adp: int
+    with_health: int
+    projection_sources: list[str] = Field(default_factory=list)
+    adp_sources: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Gaps a user should know about before trusting the board.",
+    )
+
+
+class ConnectedDraftOut(ApiModel):
+    """Result of connecting a live draft."""
+
+    draft_id: str
+    league_id: str
+    league_name: str
+    status: str
+    user_draft_slot: int | None = None
+    picks_already_made: int
+    following: bool
+    league: LeagueSettingsOut
+    pool: PoolProvenanceOut
 
 
 class AdvanceRequest(ApiModel):

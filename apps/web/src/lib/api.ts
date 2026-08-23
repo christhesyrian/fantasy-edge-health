@@ -7,14 +7,24 @@
 import { z } from "zod";
 
 import {
+  connectedDraftSchema,
   draftBoardSchema,
+  draftStateSchema,
   healthStatusSchema,
+  nflStateSchema,
   playerDetailSchema,
   simulationStateSchema,
+  sleeperDraftSchema,
+  sleeperLeagueSchema,
+  sleeperUserSchema,
+  type ConnectedDraft,
   type DraftBoard,
+  type DraftState,
   type HealthStatus,
   type PlayerDetail,
   type SimulationState,
+  type SleeperDraft,
+  type SleeperLeague,
 } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
@@ -101,9 +111,14 @@ export const api = {
   /**
    * The canonical board, and the re-sync read: after a dropped event stream a
    * client re-reads this rather than trying to replay what it missed.
+   *
+   * Lives under `/drafts` because a board is the same thing whether picks
+   * arrive from a Sleeper poller or the simulator.
    */
   getBoard: (id: string, depth = 120) =>
-    request(`/api/v1/simulations/${id}/board?depth=${depth}`, draftBoardSchema),
+    request(`/api/v1/drafts/${id}/board?depth=${depth}`, draftBoardSchema),
+
+  getDraftState: (id: string) => request(`/api/v1/drafts/${id}`, draftStateSchema),
 
   advance: (id: string, picks: number, stopAtUserTurn = true) =>
     request(`/api/v1/simulations/${id}/advance`, z.array(z.unknown()), {
@@ -123,17 +138,66 @@ export const api = {
     }),
 
   getPlayer: (id: string, playerUuid: string) =>
-    request(`/api/v1/simulations/${id}/players/${playerUuid}`, playerDetailSchema),
+    request(`/api/v1/drafts/${id}/players/${playerUuid}`, playerDetailSchema),
 
   comparePlayers: (id: string, playerUuids: string[]) =>
     request(
-      `/api/v1/simulations/${id}/compare?${playerUuids
+      `/api/v1/drafts/${id}/compare?${playerUuids
         .map((uuid) => `player_uuid=${encodeURIComponent(uuid)}`)
         .join("&")}`,
       z.array(playerDetailSchema),
     ),
 
-  eventStreamUrl: (id: string) => `${API_BASE}/api/v1/simulations/${id}/events`,
+  eventStreamUrl: (id: string) => `${API_BASE}/api/v1/drafts/${id}/events`,
+
+  // ---- Sleeper onboarding -------------------------------------------------
+
+  nflState: () => request("/api/v1/sleeper/state", nflStateSchema),
+
+  findSleeperUser: (username: string) =>
+    request(
+      `/api/v1/sleeper/users/${encodeURIComponent(username)}`,
+      sleeperUserSchema.nullable(),
+    ),
+
+  sleeperLeagues: (userId: string) =>
+    request(
+      `/api/v1/sleeper/users/${encodeURIComponent(userId)}/leagues`,
+      z.array(sleeperLeagueSchema),
+    ),
+
+  sleeperDrafts: (leagueId: string, userId?: string) =>
+    request(
+      `/api/v1/sleeper/leagues/${encodeURIComponent(leagueId)}/drafts` +
+        (userId ? `?user_id=${encodeURIComponent(userId)}` : ""),
+      z.array(sleeperDraftSchema),
+    ),
+
+  /** Connect a real draft. This is the call with side effects. */
+  connectDraft: (input: {
+    leagueId: string;
+    draftId: string;
+    userId?: string;
+    follow?: boolean;
+  }) =>
+    request("/api/v1/leagues/connect", connectedDraftSchema, {
+      method: "POST",
+      body: JSON.stringify({
+        league_id: input.leagueId,
+        draft_id: input.draftId,
+        user_id: input.userId ?? null,
+        follow: input.follow ?? true,
+      }),
+    }),
 };
 
-export type { DraftBoard, HealthStatus, PlayerDetail, SimulationState };
+export type {
+  ConnectedDraft,
+  DraftBoard,
+  DraftState,
+  HealthStatus,
+  PlayerDetail,
+  SimulationState,
+  SleeperDraft,
+  SleeperLeague,
+};

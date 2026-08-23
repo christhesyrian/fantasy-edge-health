@@ -61,10 +61,21 @@ def build_board_payload(
         }
     )
 
+    # A board with no projections and no ADP still ranks, but on almost no
+    # information. Saying so is the difference between an honest tool and a
+    # confident-looking one.
+    warnings = list(session.pool_warnings)
+    if not sources:
+        warnings.insert(
+            0,
+            "No projection or ADP source is loaded, so this ranking rests on "
+            "roster need and scarcity alone.",
+        )
+
     return DraftBoardOut(
         draft_id=session.session_id,
         is_demo=session.is_demo,
-        status="complete" if state.is_complete else "drafting",
+        status="complete" if session.is_complete else "drafting",
         current_pick=current_pick,
         current_round=current_round,
         next_user_pick=board.next_user_pick,
@@ -82,6 +93,7 @@ def build_board_payload(
         recent_picks=[pick_out(p, players) for p in reversed(state.picks[-RECENT_PICK_COUNT:])],
         computed_at=utcnow(),
         computation_ms=session.last_computation_ms,
+        warnings=warnings,
         provenance=[
             Provenance(
                 source=source,

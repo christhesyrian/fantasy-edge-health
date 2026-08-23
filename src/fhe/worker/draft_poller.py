@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import random
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum, unique
@@ -158,6 +159,9 @@ class DraftPoller:
         state: Draft state to apply picks to. A fresh one is created if omitted.
         sequence: Shared sequence counter, so event numbering is consistent with
             any other publisher on the same channel.
+        on_picks_applied: Awaited after a cycle that applied at least one pick.
+            The poller owns draft state but not the board, so recomputation is
+            delegated rather than duplicated here.
     """
 
     def __init__(
@@ -170,6 +174,7 @@ class DraftPoller:
         state: DraftState | None = None,
         sequence: SequenceCounter | None = None,
         rng: random.Random | None = None,
+        on_picks_applied: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self._settings = settings
         self._provider = provider
@@ -179,6 +184,7 @@ class DraftPoller:
         self._sequence = sequence or SequenceCounter()
         self._rng = rng or random.Random()  # noqa: S311 - backoff jitter, not crypto
         self._status = PollerStatus(draft_id=binding.draft_id)
+        self._on_picks_applied = on_picks_applied
         self._stop = asyncio.Event()
 
     @property
@@ -268,13 +274,18 @@ class DraftPoller:
                 },
             )
         if applied:
-            await self._publish(
-                EventType.BOARD_UPDATED,
-                {
-                    "current_pick": self._state.current_pick_number,
-                    "picks_made": self._state.pick_count,
-                },
-            )
+            if self._on_picks_applied is not None:
+                # Recomputing the board also publishes BOARD_UPDATED, so the
+                # poller does not emit its own and duplicate the event.
+                await self._on_picks_applied()
+            else:
+                await self._publish(
+                    EventType.BOARD_UPDATED,
+                    {
+                        "current_pick": self._state.current_pick_number,
+                        "picks_made": self._state.pick_count,
+                    },
+                )
 
         if self._is_complete(draft):
             self._status.state = PollerState.COMPLETE

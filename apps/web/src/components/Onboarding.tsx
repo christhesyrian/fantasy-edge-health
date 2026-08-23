@@ -4,6 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { ConnectSleeper } from "@/components/ConnectSleeper";
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/cn";
 
@@ -117,7 +118,7 @@ export function Onboarding() {
         </details>
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-[1.4fr_1fr]">
+      <div className="grid gap-4 md:grid-cols-[1.15fr_1fr]">
         <section className="reticle border border-[var(--hairline-bright)] bg-[var(--surface-panel)] p-5">
           <div className="flex items-baseline gap-2.5">
             <h2 className="display text-xl text-[var(--text-primary)]">Demo mode</h2>
@@ -201,20 +202,7 @@ export function Onboarding() {
         </section>
 
         <section className="flex flex-col gap-4">
-          <div className="border bg-[var(--surface-panel)] p-4 opacity-70">
-            <h2 className="display text-lg text-[var(--text-secondary)]">
-              Connect Sleeper
-            </h2>
-            <p className="mt-1.5 text-[0.8125rem] leading-relaxed text-[var(--text-muted)]">
-              Follow a real Sleeper draft live. The provider is public and needs no API
-              key — only your username.
-            </p>
-            <p className="mt-3 border-l-2 border-l-[var(--color-hold-400)] pl-2.5 text-[0.75rem] text-[var(--color-hold-400)]">
-              Not yet wired up. The Sleeper client, live poller, and onboarding flow are
-              the next milestone; this is shown as unavailable rather than as a button
-              that fails.
-            </p>
-          </div>
+          <ConnectSleeper />
 
           <div className="border bg-[var(--surface-panel)] p-4">
             <h2 className="display text-lg text-[var(--text-secondary)]">
