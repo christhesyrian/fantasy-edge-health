@@ -60,6 +60,13 @@ SOURCE: Final = "FantasyPros"
 # Ranking type that yields average draft position rather than expert rank.
 ADP_RANKING_TYPE: Final = "ADP"
 
+# Which `stats` field carries fantasy points for each scoring family.
+_POINTS_FIELD_BY_FORMAT: Final[dict[str, str]] = {
+    "ppr": "points_ppr",
+    "half_ppr": "points_half",
+    "standard": "points",
+}
+
 _SCORING_BY_FORMAT: Final[dict[str, str]] = {
     "ppr": "PPR",
     "half_ppr": "HALF",
@@ -188,6 +195,7 @@ class RankedPlayer:
     team: str
     position: str
     rank: float | None
+    rank_stdev: float | None
     tier: int | None
     bye_week: int | None
     raw: dict[str, Any] = field(default_factory=dict)
@@ -332,7 +340,33 @@ class FantasyProsProvider:
             path=path,
             remaining_today=self._budget.remaining,
         )
+        self._warn_if_truncated(path, payload)
         return payload
+
+    def _warn_if_truncated(self, path: str, payload: dict[str, Any]) -> None:
+        """Say so when the account tier returned a fraction of the data.
+
+        Verified 2026-08-23: a free-tier key returns `limit: 10` alongside a
+        `count` of the full result set — 10 of 83 quarterbacks, 10 of 660
+        ranked players. Silently importing a tenth of a draft board would be
+        the worst kind of failure here: the board would look populated and run
+        out mid-draft. So the truncation is reported, loudly, every time.
+        """
+        if not payload.get("public_api_limited"):
+            return
+        returned = len(payload.get("players") or [])
+        available = _integer(payload.get("count"))
+        log.warning(
+            "fantasypros_response_truncated_by_tier",
+            path=path,
+            tier=_clean(payload.get("tier")) or "unknown",
+            returned=returned,
+            available=available,
+            detail=(
+                "This API key's tier returns a capped slice of each result set. "
+                "Use the CSV export path for a full draft board."
+            ),
+        )
 
     async def get_projections(
         self, season: int, position: str, *, scoring_format: str = "ppr"
@@ -355,9 +389,15 @@ class FantasyProsProvider:
                 provider=SOURCE,
                 operation="get_projections",
             )
-        return tuple(self._to_projection(row, position) for row in players if isinstance(row, dict))
+        return tuple(
+            self._to_projection(row, position, scoring_format)
+            for row in players
+            if isinstance(row, dict)
+        )
 
-    def _to_projection(self, row: dict[str, Any], requested_position: str) -> ProjectedPlayer:
+    def _to_projection(
+        self, row: dict[str, Any], requested_position: str, scoring_format: str = "ppr"
+    ) -> ProjectedPlayer:
         """Map one projection row.
 
         The published spec does not describe the ``stats`` object, so the
@@ -368,8 +408,13 @@ class FantasyProsProvider:
         """
         stats = row.get("stats")
         stats = stats if isinstance(stats, dict) else {}
+        # Verified 2026-08-23: the response echoes `scoring: STD` even when PPR
+        # is requested, but the stats object carries every format side by side.
+        # Reading the format-specific field is therefore more trustworthy than
+        # the request parameter. `points` is the last resort, not the first.
+        preferred = _POINTS_FIELD_BY_FORMAT.get(scoring_format.lower(), "points_ppr")
         points: float | None = None
-        for key in ("points", "fpts", "fantasy_points", "proj_pts", "FPTS"):
+        for key in (preferred, "points", "fpts", "fantasy_points", "proj_pts"):
             if key in stats:
                 points = _number(stats[key])
                 if points is not None:
@@ -403,13 +448,22 @@ class FantasyProsProvider:
         return tuple(self._to_rank(row) for row in players if isinstance(row, dict))
 
     def _to_rank(self, row: dict[str, Any]) -> RankedPlayer:
-        """Map one consensus-rankings row."""
+        """Map one consensus-rankings row.
+
+        `rank_ave` is the mean draft position and `rank_std` its dispersion —
+        both present in the real response though absent from the published
+        schema. The average is preferred over `rank_ecr`, which is a consensus
+        *rank* rather than an average position, and the deviation matters
+        because the next-pick survival model is materially better with a real
+        one than with its fallback assumption.
+        """
         return RankedPlayer(
             provider_player_id=_clean(row.get("player_id")),
             name=_clean(row.get("player_name")),
             team=_clean(row.get("player_team_id")).upper(),
             position=_clean(row.get("player_position_id")).upper(),
-            rank=_number(row.get("rank_ecr")),
+            rank=_number(row.get("rank_ave")) or _number(row.get("rank_ecr")),
+            rank_stdev=_number(row.get("rank_std")),
             tier=_integer(row.get("tier")),
             bye_week=_integer(row.get("player_bye_week")),
             raw={},

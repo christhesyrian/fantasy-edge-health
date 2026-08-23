@@ -56,14 +56,47 @@ which is public data under its own licence.
 | Attribution | Every imported value is stamped `FantasyPros`, which the war room displays beside the number. |
 | Personal, non-commercial | See the note below. |
 
+### The free tier returns 10 rows per call — measured, not assumed
+
+Verified on 2026-08-23 with a real key. Both endpoints answer with
+`"tier": "free"`, `"public_api_limited": true`, and `"limit": 10`, alongside a
+`count` of the full result set:
+
+| Call | Returned | Available (`count`) |
+| --- | ---: | ---: |
+| `projections?position=QB` | 10 | 83 |
+| `consensus-rankings?type=ADP&position=ALL` | 10 | 660 |
+
+So the API alone **cannot fill a draft board**. Six positions at ten rows each
+is sixty players, against the ~200 a twelve-team draft consumes. The adapter
+logs `fantasypros_response_truncated_by_tier` on every such response, because
+importing a tenth of a board silently is the worst available outcome: it looks
+populated and runs out mid-draft.
+
+Two consequences worth knowing:
+
+- **The CSV export is the real path to a full board.** A FantasyPros account
+  can export the complete projection and ranking sets from the website; the
+  converter turns either into import shape.
+- **`rank_std` is 0.0 on this tier**, because the free consensus is built from
+  five experts. The survival model therefore falls back to its own dispersion
+  assumption rather than using a real one — which is the correct behaviour, but
+  it is a fallback and is labelled as such.
+
 ### Two things a reader should know
 
-**The `stats` object shape is not in the published spec.** The projections
-endpoint returns a per-player `stats` object that the OpenAPI document does not
-describe. The adapter therefore looks for the fantasy-points value under several
-known names and, finding none, records the projection as **unknown** rather than
-guessing a number. That follows the rule that missing data lowers confidence and
-never invents value.
+**The `stats` object shape is not in the published spec**, so it was read from
+a real response. It carries `points`, `points_ppr`, and `points_half` side by
+side, and the adapter selects by scoring format — which matters, because the
+endpoint echoes `"scoring": "STD"` even when PPR is requested. Trusting the
+request parameter would have silently loaded standard-scoring projections into
+a PPR league. Where no recognisable points field exists the projection is
+recorded as **unknown** rather than guessed, so missing data lowers confidence
+instead of inventing value.
+
+Likewise the ADP response carries `rank_ave`, `rank_min`, `rank_max`, and
+`rank_std`, none of them in the published schema. The average is used rather
+than `rank_ecr`, which is a consensus *rank* and not an average draft position.
 
 **Non-commercial and non-compete.** The licence grants use of the Data "for
 personal, non-commercial purposes only", and separately forbids using it to
