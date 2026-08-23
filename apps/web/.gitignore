@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# The template carries no values and is the frontend's contract with a
+# deployment or design tool, so it is committed on purpose.
+!.env.example
 
 # vercel
 .vercel

@@ -36,6 +36,8 @@ blob-report/
 # Playwright starts the API from the repo root with FHE_DATA_DIR=.e2e-data,
 # so the throwaway database lands here rather than under apps/web.
 /.e2e-data/
+# Same for the load-test harness, which creates a throwaway database.
+/.loadtest-data/
 
 # ---------- data (never commit bulk provider dumps) ----------
 data/raw/
@@ -67,7 +69,9 @@ Thumbs.db
 !.vscode/extensions.json
 
 # ---------- claude local ----------
-.claude/settings.local.json
+# Local agent tooling: useful on this machine, not part of the published
+# project. Kept out of the repository so the GitHub view is the product.
+.claude/
 
 # ---------- next.js build output ----------
 apps/web/.next/
