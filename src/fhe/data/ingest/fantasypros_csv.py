@@ -72,8 +72,10 @@ class ConversionReport:
     rows_read: int = 0
     rows_written: int = 0
     rows_skipped: int = 0
+    top_score: float = 0.0
     column_mapping: dict[str, str] = field(default_factory=dict)
     skipped_examples: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def note_skip(self, reason: str) -> None:
         """Record a skipped row, keeping a few examples."""
@@ -91,6 +93,8 @@ class ConversionReport:
         if self.skipped_examples:
             lines.append("skipped examples:")
             lines.extend(f"  {example}" for example in self.skipped_examples)
+        for warning in self.warnings:
+            lines.append(f"\nWARNING: {warning}")
         return "\n".join(lines)
 
 
@@ -135,8 +139,20 @@ def _headings_of(reader: csv.DictReader[str]) -> dict[str, str]:
     return {_token(h): h for h in (reader.fieldnames or []) if h}
 
 
-def convert_projections(text: str) -> tuple[str, ConversionReport]:
+# A season projection for the best player at any position lands in the
+# hundreds; a single game lands in the tens. FantasyPros exports both from
+# similar-looking pages, and importing weekly numbers as season totals would
+# silently produce a board an order of magnitude wrong — every player equally
+# so, which is exactly the kind of error that looks plausible. This is the
+# threshold above which a file is credibly season-long.
+MIN_CREDIBLE_SEASON_TOP_SCORE: Final = 100.0
+
+
+def convert_projections(text: str, *, default_position: str = "") -> tuple[str, ConversionReport]:
     """Convert a projections export into ``projections.csv`` shape.
+
+    ``default_position`` fills in for the per-position exports, which carry no
+    position column because the file itself is the position.
 
     Returns the converted CSV text and a report of what was mapped.
     """
@@ -152,11 +168,18 @@ def convert_projections(text: str) -> tuple[str, ConversionReport]:
     position_col = _find(headings, _POSITION_ALIASES)
     team_col = _find(headings, _TEAM_ALIASES)
 
+    if position_col is None and not default_position:
+        raise ConversionError(
+            "this file has no position column, so --position is required. "
+            f"Headings present: {sorted(headings.values())}. FantasyPros exports "
+            "one file per position, and the file itself is the position."
+        )
+
     report = ConversionReport(
         column_mapping={
             "player_name": name_col,
             "projected_points": points_col,
-            "position": position_col or "(none — inferred per row)",
+            "position": position_col or f"(supplied: {default_position})",
             "team": team_col or "(none)",
         }
     )
@@ -169,7 +192,11 @@ def convert_projections(text: str) -> tuple[str, ConversionReport]:
         report.rows_read += 1
         name, embedded_team = _split_name_and_team(row.get(name_col) or "")
         team = (row.get(team_col) or "").strip().upper() if team_col else embedded_team
-        position = _normalise_position(row.get(position_col) or "") if position_col else ""
+        position = (
+            _normalise_position(row.get(position_col) or "")
+            if position_col
+            else _normalise_position(default_position)
+        )
         points = _number(row.get(points_col))
 
         if not name:
@@ -186,12 +213,22 @@ def convert_projections(text: str) -> tuple[str, ConversionReport]:
 
         writer.writerow([name, position, team, points])
         report.rows_written += 1
+        report.top_score = max(report.top_score, float(points))
+
+    if report.top_score and report.top_score < MIN_CREDIBLE_SEASON_TOP_SCORE:
+        report.warnings.append(
+            f"The highest projection in this file is {report.top_score:.1f}. A season "
+            "total for a leading player is in the hundreds, so this looks like a "
+            "WEEKLY export. A draft board needs season-long projections — re-export "
+            "with the season view selected."
+        )
 
     log.info(
         "fantasypros_projections_converted",
         read=report.rows_read,
         written=report.rows_written,
         skipped=report.rows_skipped,
+        top_score=report.top_score,
     )
     return out.getvalue(), report
 

@@ -305,7 +305,79 @@ async def _seed(settings: Settings) -> int:
     return 0
 
 
-def _convert_fantasypros(kind: str, source_path: Path, dest_path: Path) -> int:
+async def _convert_fantasypros_pdf(settings: Settings, source_path: Path, dest_path: Path) -> int:
+    """Turn an ADP cheat-sheet PDF into an importable adp.csv.
+
+    Positions come from the sheet's own per-position lists where it has them.
+    Those stop at the top hundred of each position, so anyone deeper is
+    resolved against the player table — which knows four thousand players and
+    is a far better authority than a truncated list.
+    """
+    import csv as _csv
+
+    from sqlalchemy import select
+
+    from fhe.data.identity import normalize_name
+    from fhe.data.ingest.fantasypros_pdf import (
+        PdfExtractionError,
+        PdfReport,
+        parse_overall,
+        parse_positions,
+        pdf_to_text,
+    )
+    from fhe.db import create_engine, create_session_factory
+    from fhe.db.models.player import Player
+
+    try:
+        overall = parse_overall(pdf_to_text(source_path, page=1))
+        sheet_positions = parse_positions(pdf_to_text(source_path, page=2))
+    except PdfExtractionError as error:
+        print(f"Could not read {source_path}:\n  {error}")
+        return 1
+
+    if not overall:
+        print(f"No ranked entries found in {source_path}. Is it an ADP/ranking cheat sheet?")
+        return 1
+
+    # Position by normalised name, from the canonical player table.
+    engine = create_engine(settings)
+    factory = create_session_factory(engine)
+    by_name: dict[str, str] = {}
+    try:
+        async with factory() as session:
+            rows = (await session.execute(select(Player.normalized_name, Player.position))).all()
+            for normalised, position in rows:
+                by_name.setdefault(str(normalised), str(position))
+    finally:
+        await engine.dispose()
+
+    report = PdfReport(overall_entries=len(overall))
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    with dest_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = _csv.writer(handle)
+        writer.writerow(["player_name", "position", "team", "adp"])
+        for rank in sorted(overall):
+            entry = overall[rank]
+            position = sheet_positions.get((entry.name.lower(), entry.team), "")
+            if position:
+                report.positioned_from_sheet += 1
+            else:
+                position = by_name.get(normalize_name(entry.name), "")
+                if position:
+                    report.positioned_from_database += 1
+            if not position:
+                # The importer requires a position and it cannot be guessed
+                # from a name, so the row is reported rather than dropped.
+                report.unresolved.append(f"{entry.name} ({entry.team or 'FA'})")
+                continue
+            writer.writerow([entry.name, position, entry.team, rank])
+
+    print(report.render())
+    print(f"\nwrote {dest_path}")
+    return 0
+
+
+def _convert_fantasypros(kind: str, source_path: Path, dest_path: Path, position: str = "") -> int:
     """Convert a FantasyPros export into the project's import schema."""
     from fhe.data.ingest.fantasypros_csv import (
         ConversionError,
@@ -319,9 +391,11 @@ def _convert_fantasypros(kind: str, source_path: Path, dest_path: Path) -> int:
         print(f"cannot read {source_path}: {error}")
         return 1
 
-    convert = convert_projections if kind == "projections" else convert_adp
     try:
-        converted, report = convert(text)
+        if kind == "projections":
+            converted, report = convert_projections(text, default_position=position)
+        else:
+            converted, report = convert_adp(text)
     except ConversionError as error:
         print(f"Could not convert {source_path}:\n  {error}")
         return 1
@@ -452,8 +526,20 @@ def build_parser() -> argparse.ArgumentParser:
         "fantasypros", help="Convert a FantasyPros CSV export you downloaded yourself"
     )
     fp_csv.add_argument("--kind", choices=["projections", "adp"], required=True)
+    fp_csv.add_argument(
+        "--position",
+        default="",
+        help="Position for a per-position export that has no position column, e.g. QB",
+    )
     fp_csv.add_argument("--in", dest="source_path", type=Path, required=True)
     fp_csv.add_argument("--out", dest="dest_path", type=Path, required=True)
+
+    fp_pdf = convert_sub.add_parser(
+        "fantasypros-pdf",
+        help="Convert a FantasyPros ADP/ranking cheat sheet PDF into adp.csv",
+    )
+    fp_pdf.add_argument("--in", dest="source_path", type=Path, required=True)
+    fp_pdf.add_argument("--out", dest="dest_path", type=Path, required=True)
 
     loadtest = subcommands.add_parser(
         "loadtest", help="Drive concurrent reads against a running API"
@@ -506,7 +592,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "simulate":
         return _simulate(args.seed, args.rounds, args.slot, args.teams)
     if args.command == "convert":
-        return _convert_fantasypros(args.kind, args.source_path, args.dest_path)
+        if args.convert_source == "fantasypros-pdf":
+            return asyncio.run(_convert_fantasypros_pdf(settings, args.source_path, args.dest_path))
+        return _convert_fantasypros(args.kind, args.source_path, args.dest_path, args.position)
     if args.command == "loadtest":
         return asyncio.run(_loadtest(args.base_url, args.concurrency, args.duration, args.draft_id))
     if args.command == "preview":

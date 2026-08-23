@@ -87,6 +87,73 @@ class TestProjections:
         assert report.column_mapping["player_name"] == "PLAYER NAME"
 
 
+class TestPerPositionExports:
+    """FantasyPros exports one file per position, with no position column."""
+
+    def test_a_supplied_position_fills_in_for_a_missing_column(self) -> None:
+        text = '"Player","Team","ATT","YDS","FPTS"\n"Josh Allen","BUF","27.9","217.2","380.5"\n'
+
+        converted, report = convert_projections(text, default_position="QB")
+
+        assert report.rows_written == 1
+        assert rows_of(converted)[0]["position"] == "QB"
+
+    def test_without_a_position_column_or_a_supplied_one_it_refuses(self) -> None:
+        """Silently dropping every row would look like an empty file."""
+        with pytest.raises(ConversionError) as error:
+            convert_projections('"Player","Team","FPTS"\n"A B","BUF","300"\n')
+
+        assert "--position" in str(error.value)
+
+    def test_duplicate_stat_headings_do_not_break_the_points_column(self) -> None:
+        """Passing and rushing both export ATT/YDS/TDS; FPTS stays unique."""
+        text = (
+            '"Player","Team","ATT","CMP","YDS","TDS","INTS","ATT","YDS","TDS","FL","FPTS"\n'
+            '"Jalen Hurts","PHI","27.9","18.5","217.2","1.5",'
+            '"0.5","6.6","27.3","0.6","0.2","350.1"\n'
+        )
+
+        converted, report = convert_projections(text, default_position="QB")
+
+        assert report.rows_written == 1
+        assert rows_of(converted)[0]["projected_points"] == "350.1"
+
+    def test_the_spacer_row_these_exports_contain_is_skipped(self) -> None:
+        """Their files carry a row of non-breaking spaces under the header."""
+        text = '"Player","Team","FPTS"\n"\xa0","",""\n"Josh Allen","BUF","380"\n'
+
+        _, report = convert_projections(text, default_position="QB")
+
+        assert report.rows_written == 1
+        assert report.rows_skipped == 1
+
+
+class TestSeasonVersusWeekly:
+    """The failure this guards is uniform and therefore invisible."""
+
+    def test_a_weekly_export_is_flagged(self) -> None:
+        text = '"Player","Team","FPTS"\n"Jalen Hurts","PHI","19.9"\n'
+
+        _, report = convert_projections(text, default_position="QB")
+
+        assert report.warnings
+        assert "WEEKLY" in report.warnings[0]
+
+    def test_a_season_export_is_not_flagged(self) -> None:
+        text = '"Player","Team","FPTS"\n"Jalen Hurts","PHI","350.1"\n'
+
+        _, report = convert_projections(text, default_position="QB")
+
+        assert not report.warnings
+
+    def test_the_warning_reaches_the_rendered_report(self) -> None:
+        _, report = convert_projections(
+            '"Player","Team","FPTS"\n"A B","PHI","19.9"\n', default_position="QB"
+        )
+
+        assert "WARNING" in report.render()
+
+
 class TestAdp:
     def test_an_adp_export(self) -> None:
         text = "Rank,Player,Team,POS,Bye,AVG\n1,Ja'Marr Chase,CIN,WR1,10,1.8\n"
