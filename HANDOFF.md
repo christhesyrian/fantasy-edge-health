@@ -140,20 +140,25 @@ Each has a regression test named after the symptom.
 ## 5. What is NOT built — resume here
 
 ### Next
-- **Command palette, favourites, light mode toggle** (directive §22, §10)
 - **Serving path for the learned model**, if it is ever promoted: a model
   registry, versioned artefacts, and drift monitoring. `docs/MODEL_CARD.md`
   records why the model passes its bar and is still not in production.
 - **Docker Compose verification** — never run, because the daemon was down
 
 ### Done since the last handoff
+- Command palette (Cmd/Ctrl+K), favourites, and a light/system theme toggle,
+  closing directive §22 and §10. Selecting a player now reveals its row.
+- **Engine fix — sub-replacement players are scored on a signed scale.** The
+  value component clamped at zero, so everyone below replacement tied on the
+  heaviest term and the ADP term ordered them worst-first: a quarterback 124
+  points below the QB12 baseline outranked QB1. Found by end-to-end testing.
 - Live Sleeper draft wired end to end: connect, DB-backed player pool, poller
   supervision, and a unified `/drafts/{id}` API serving live and simulated
   drafts identically.
 - Weekly stats and snap counts ingested, so the health model's workload terms
   are measured rather than absent.
 - Ten automated data-quality checks writing to `data_quality_results`.
-- Eight Playwright end-to-end tests, starting both servers themselves.
+- Playwright end-to-end tests (now twelve), starting both servers themselves.
 - The ML phase: point-in-time dataset, seven-check leakage audit, baselines,
   temporal evaluation, and calibration — with an honest not-promoted verdict.
 

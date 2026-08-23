@@ -16,16 +16,17 @@ done: implemented, formatted, linted, type-checked, tested, documented.
 | 5 — Rankings | **Done** | VORP, scarcity, tiers, risk adjustment, CSV import for ADP and projections, rankings surfaced in the board. |
 | 6 — Draft engine | **Done** | Engine, survival model, deterministic explanations, board assembly, exposed over HTTP. |
 | 7 — Mock draft | **Done** | Seeded simulator drives the production engine; full war room over SSE. |
-| 8 — Sleeper live draft | **Partial** | Onboarding endpoints and a tested resilient poller exist; not yet wired to a war-room session or the UI. |
-| 9 — ML | Not started | Deliberately blocked on workload features. Promotion bar documented in `docs/MODEL_CARD.md`. |
-| 10 — Product polish | **Partial** | Comparison, alerts, keyboard shortcuts, accessibility, reduced motion. Missing: command palette, favourites, light-mode toggle. |
-| 11 — Production readiness | **Partial** | Full suite, CI, security scanning, observability, documentation, container images. Missing: load testing, Playwright, a verified Compose run. |
+| 8 — Sleeper live draft | **Done** | Connect, DB-backed player pool, supervised poller, and one `/drafts/{id}` API serving live and simulated drafts identically. |
+| 9 — ML | **Done** | Point-in-time dataset, seven-check leakage audit, baselines, temporal evaluation, calibration. The verdict is honest and negative: not promoted. See `docs/MODEL_CARD.md`. |
+| 10 — Product polish | **Done** | Comparison, alerts, keyboard shortcuts, accessibility, reduced motion, command palette, favourites, light/system theme. |
+| 11 — Production readiness | **Partial** | Full suite, CI, security scanning, observability, documentation, container images, twelve Playwright end-to-end tests. Missing: load testing and a verified Compose run (the Docker daemon has been down on this machine). |
 
 ## Quality gates
 
-Current on `master`: **411 Python tests** and **33 frontend tests** pass.
-`ruff check` and `ruff format --check` clean, `mypy --strict` clean across 98
-files, eslint and `tsc` clean, production build succeeds.
+Current on `master`: **515 Python tests**, **55 frontend tests**, and **12
+Playwright end-to-end tests** pass. `ruff check` and `ruff format --check`
+clean, `mypy --strict` clean across 118 files, eslint and `tsc` clean,
+production build succeeds.
 
 ## Log
 
