@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { PREVIEW_MODE, PREVIEW_UNAVAILABLE } from "@/lib/preview/mode";
 import type { SleeperDraft, SleeperLeague } from "@/lib/types";
 
 /**
@@ -20,6 +21,36 @@ import type { SleeperDraft, SleeperLeague } from "@/lib/types";
  * an explicit button.
  */
 export function ConnectSleeper() {
+  // Preview has no backend to reach Sleeper through. Saying so is the honest
+  // move: a form that looks live and fails on submit is worse than one that
+  // states its precondition up front.
+  if (PREVIEW_MODE) {
+    return <SleeperUnavailableInPreview />;
+  }
+  return <ConnectSleeperForm />;
+}
+
+function SleeperUnavailableInPreview() {
+  return (
+    <section
+      data-testid="sleeper-preview-disabled"
+      className="border bg-[var(--surface-panel)] p-5"
+    >
+      <h2 className="display text-xl text-[var(--text-primary)]">
+        Connect a Sleeper league
+      </h2>
+      <p className="mt-2 text-[0.8125rem] leading-relaxed text-[var(--text-secondary)]">
+        Unavailable in preview. Connecting a real draft reads live data from Sleeper,
+        which needs the Fantasy Health Edge API running.
+      </p>
+      <p className="mt-3 text-[0.8125rem] leading-relaxed text-[var(--text-muted)]">
+        {PREVIEW_UNAVAILABLE}
+      </p>
+    </section>
+  );
+}
+
+function ConnectSleeperForm() {
   const router = useRouter();
   const [username, setUsername] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);

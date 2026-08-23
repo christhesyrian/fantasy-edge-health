@@ -18,6 +18,7 @@ import { ScarcityStrip } from "@/components/war-room/ScarcityStrip";
 import { TopRail } from "@/components/war-room/TopRail";
 import { api, ApiError } from "@/lib/api";
 import { useDraftStream } from "@/lib/useDraftStream";
+import { PREVIEW_DRAFT_REFUSED, PREVIEW_MODE } from "@/lib/preview/mode";
 import { useFavourites } from "@/lib/useFavourites";
 import { useTheme } from "@/lib/useTheme";
 
@@ -108,6 +109,21 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
     onSuccess: refetchBoard,
   });
 
+  const onDraft = useCallback(
+    (uuid: string) => {
+      if (PREVIEW_MODE) {
+        // The recording holds the picks the simulator actually made, so
+        // honouring an arbitrary choice would show a different player as
+        // drafted than the one that was clicked.
+        setNotice(PREVIEW_DRAFT_REFUSED);
+        window.setTimeout(() => setNotice(null), 5000);
+        return;
+      }
+      draft.mutate(uuid);
+    },
+    [draft],
+  );
+
   const toggleCompare = useCallback((uuid: string) => {
     setComparing((current) =>
       current.includes(uuid)
@@ -141,7 +157,9 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
       // makes the picks, so these keys do nothing rather than 409.
       if (isDemo && event.key === "n") advance.mutate(1);
       if (isDemo && event.key === "a") advance.mutate(500);
-      if (isDemo && event.key === "Enter" && selectedUuid) draft.mutate(selectedUuid);
+      if (isDemo && !PREVIEW_MODE && event.key === "Enter" && selectedUuid) {
+        draft.mutate(selectedUuid);
+      }
       if (event.key === "i" && selectedUuid) setInspectUuid(selectedUuid);
     };
     window.addEventListener("keydown", onKey);
@@ -263,8 +281,8 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
     <main className="flex h-dvh flex-col overflow-hidden">
       <TopRail
         board={board}
-        connection={stream.connection}
-        lastEventAt={stream.lastEventAt}
+        connection={PREVIEW_MODE ? "PREVIEW" : stream.connection}
+        lastEventAt={PREVIEW_MODE ? null : stream.lastEventAt}
       />
 
       {notice ? (
@@ -349,7 +367,7 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
             onSelect={setSelectedUuid}
             onInspect={setInspectUuid}
             onToggleCompare={toggleCompare}
-            onDraft={(uuid) => draft.mutate(uuid)}
+            onDraft={onDraft}
             isOnTheClock={board.is_user_on_the_clock}
             favourites={favourites.ids}
             onToggleFavourite={favourites.toggle}
@@ -371,7 +389,7 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
             <RecommendationPanel
               pick={focus}
               isOnTheClock={board.is_user_on_the_clock}
-              onDraft={(uuid) => draft.mutate(uuid)}
+              onDraft={onDraft}
               onInspect={setInspectUuid}
               isDrafting={draft.isPending}
             />

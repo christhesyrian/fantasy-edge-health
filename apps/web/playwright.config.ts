@@ -15,6 +15,10 @@ const WEB_PORT = 3123;
 
 export default defineConfig({
   testDir: "./e2e",
+  // Preview mode has its own config, which deliberately starts no API. Running
+  // those specs here — against a live backend, without the preview flag —
+  // would assert preview behaviour on a live build and prove nothing.
+  testIgnore: /preview\.spec\.ts/,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,

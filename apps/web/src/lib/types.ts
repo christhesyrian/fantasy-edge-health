@@ -313,4 +313,10 @@ export type ConnectedDraft = z.infer<typeof connectedDraftSchema>;
 export type HealthStatus = z.infer<typeof healthStatusSchema>;
 
 /** Real-time transport state shown in the top rail. */
-export type ConnectionState = "LIVE" | "RECONNECTING" | "STALE" | "DISCONNECTED";
+/**
+ * PREVIEW is deliberately part of this union rather than a separate flag beside
+ * it: the feed indicator has one place to render, and a preview build must be
+ * incapable of reaching the LIVE branch.
+ */
+export type ConnectionState =
+  "LIVE" | "RECONNECTING" | "STALE" | "DISCONNECTED" | "PREVIEW";

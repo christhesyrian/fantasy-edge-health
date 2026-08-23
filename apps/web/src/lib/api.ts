@@ -6,6 +6,9 @@
  */
 import { z } from "zod";
 
+import { ApiError } from "./apiError";
+import { PREVIEW_MODE } from "./preview/mode";
+import { previewApi } from "./preview/previewApi";
 import {
   connectedDraftSchema,
   draftBoardSchema,
@@ -29,18 +32,7 @@ import {
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
-/** An API call that failed, carrying the server's structured error. */
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-    readonly requestId?: string,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
+export { ApiError };
 
 const errorBodySchema = z.object({
   error: z.string(),
@@ -90,7 +82,7 @@ export interface SimulationOptions {
   temperature?: number;
 }
 
-export const api = {
+const liveApi = {
   health: () => request("/api/v1/health", healthStatusSchema),
 
   createSimulation: (options: SimulationOptions) =>
@@ -190,6 +182,29 @@ export const api = {
       }),
     }),
 };
+
+/**
+ * What every screen calls.
+ *
+ * Widened in exactly one place: the live client always has an event-stream URL,
+ * while preview has none and must not pretend otherwise. Declaring that here
+ * rather than casting means the preview adapter is type-checked against the
+ * real client, so it cannot quietly drift out of contract.
+ */
+export type DraftApi = Omit<typeof liveApi, "eventStreamUrl"> & {
+  eventStreamUrl: (id: string) => string | null;
+};
+
+/**
+ * The active backend.
+ *
+ * `PREVIEW_MODE` is an inlined build-time constant, so this is decided when the
+ * bundle is built, not per request. A build made without the flag always
+ * resolves to `liveApi`, and nothing a user does can switch it — which is the
+ * property that matters: recorded data can never surface on the production
+ * path.
+ */
+export const api: DraftApi = PREVIEW_MODE ? previewApi : liveApi;
 
 export type {
   ConnectedDraft,

@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/cn";
 import { since } from "@/lib/format";
+import { PREVIEW_BANNER, PREVIEW_MODE } from "@/lib/preview/mode";
 import type { ConnectionState, DraftBoard } from "@/lib/types";
 
 const CONNECTION_STYLE: Record<ConnectionState, { dot: string; label: string }> = {
@@ -17,6 +18,12 @@ const CONNECTION_STYLE: Record<ConnectionState, { dot: string; label: string }> 
   DISCONNECTED: {
     dot: "bg-[var(--color-hazard-400)]",
     label: "text-[var(--color-hazard-400)]",
+  },
+  // Neither healthy nor broken: nothing is connected, and nothing is meant to
+  // be. Muted so it never reads as a working live feed.
+  PREVIEW: {
+    dot: "bg-[var(--text-muted)]",
+    label: "text-[var(--text-muted)]",
   },
 };
 
@@ -74,7 +81,15 @@ export function TopRail({
         </div>
       </div>
 
-      {board.is_demo ? (
+      {PREVIEW_MODE ? (
+        <span
+          data-testid="preview-badge"
+          className="border border-[var(--color-warn-400)] px-2 py-1 text-[0.625rem] font-semibold tracking-[0.18em] text-[var(--color-warn-400)] uppercase"
+          title="Recorded output from the demo simulator, replayed without a backend. Nothing here is live."
+        >
+          {PREVIEW_BANNER}
+        </span>
+      ) : board.is_demo ? (
         <span
           className="border border-[var(--color-signal-500)] px-2 py-1 text-[0.625rem] font-semibold tracking-[0.18em] text-[var(--color-signal-300)] uppercase"
           title="Synthetic data. No real player, projection, or ADP figures are shown."

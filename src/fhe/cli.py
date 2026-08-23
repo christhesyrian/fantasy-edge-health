@@ -14,10 +14,23 @@ import argparse
 import asyncio
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from fhe import __version__
 from fhe.config import Settings, get_settings
 from fhe.observability import configure_logging, get_logger
+
+# The frontend imports this file directly, so it lives inside the web app's
+# source tree rather than in a data directory.
+DEFAULT_PREVIEW_FIXTURE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "apps"
+    / "web"
+    / "src"
+    / "lib"
+    / "preview"
+    / "recorded.json"
+)
 
 log = get_logger(__name__)
 
@@ -292,6 +305,58 @@ async def _seed(settings: Settings) -> int:
     return 0
 
 
+async def _loadtest(base_url: str, concurrency: int, duration: float, draft_id: str | None) -> int:
+    """Run the read-path load test against a live API."""
+    import httpx
+
+    from fhe.loadtest import run_load_test
+    from fhe.loadtest.runner import default_scenarios
+
+    async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as client:
+        if draft_id is None:
+            # A demo simulation needs no ingested data, which keeps the load
+            # test runnable on a clean checkout.
+            created = await client.post(
+                "/api/v1/simulations",
+                json={
+                    "team_count": 12,
+                    "user_draft_slot": 5,
+                    "scoring_format": "ppr",
+                    "seed": 42,
+                },
+            )
+            created.raise_for_status()
+            draft_id = str(created.json()["simulation_id"])
+
+        board = await client.get(f"/api/v1/drafts/{draft_id}/board?depth=5")
+        board.raise_for_status()
+        recommendations = board.json().get("recommendations") or []
+        player_uuid = recommendations[0]["player_uuid"] if recommendations else None
+
+    result = await run_load_test(
+        base_url,
+        default_scenarios(draft_id, player_uuid),
+        concurrency=concurrency,
+        duration_seconds=duration,
+    )
+    print(result.render())
+    return 0 if result.total_errors == 0 else 1
+
+
+async def _preview_capture(destination: Path) -> int:
+    """Re-record the frontend's offline preview fixtures."""
+    from fhe.preview.capture import capture_fixtures, write_fixtures
+
+    fixtures = await capture_fixtures()
+    written = write_fixtures(fixtures, destination)
+    print(
+        f"Recorded {len(fixtures.snapshots)} board snapshots and "
+        f"{len(fixtures.players)} player details "
+        f"({written / 1024:.0f} KiB) to {destination}"
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Assemble the argument parser."""
     parser = argparse.ArgumentParser(
@@ -334,6 +399,32 @@ def build_parser() -> argparse.ArgumentParser:
     simulate.add_argument("--slot", type=int, default=5)
     simulate.add_argument("--rounds", type=int, default=15)
 
+    preview = subcommands.add_parser(
+        "preview", help="Frontend preview fixtures recorded from the real API"
+    )
+    preview_sub = preview.add_subparsers(dest="preview_command", required=True)
+    preview_capture = preview_sub.add_parser(
+        "capture", help="Re-record apps/web preview fixtures from the demo simulator"
+    )
+    preview_capture.add_argument(
+        "--out",
+        type=Path,
+        default=DEFAULT_PREVIEW_FIXTURE_PATH,
+        help="Where to write the recording",
+    )
+
+    loadtest = subcommands.add_parser(
+        "loadtest", help="Drive concurrent reads against a running API"
+    )
+    loadtest.add_argument("--base-url", default="http://127.0.0.1:8000")
+    loadtest.add_argument("--concurrency", type=int, default=20)
+    loadtest.add_argument("--duration", type=float, default=15.0)
+    loadtest.add_argument(
+        "--draft-id",
+        default=None,
+        help="Existing draft to read. A demo simulation is created when omitted.",
+    )
+
     subcommands.add_parser("seed", help="Create the database schema")
     subcommands.add_parser("quality", help="Run data-quality checks")
 
@@ -372,6 +463,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return asyncio.run(_ingest_injuries(settings, args.seasons))
     if args.command == "simulate":
         return _simulate(args.seed, args.rounds, args.slot, args.teams)
+    if args.command == "loadtest":
+        return asyncio.run(_loadtest(args.base_url, args.concurrency, args.duration, args.draft_id))
+    if args.command == "preview":
+        return asyncio.run(_preview_capture(args.out))
     if args.command == "seed":
         return asyncio.run(_seed(settings))
     if args.command == "quality":
