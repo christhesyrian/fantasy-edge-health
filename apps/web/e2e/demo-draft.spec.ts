@@ -25,7 +25,9 @@ async function startDemoDraft(page: Page) {
 
 /** Player names currently on the board, in rank order. */
 async function boardNames(page: Page): Promise<string[]> {
-  return page.locator("tbody tr td:nth-child(2)").allInnerTexts();
+  // The first span only: the cell also carries the team, so its innerText
+  // would read "Beau DevereauxDEN".
+  return page.locator("tbody tr td:nth-child(2) span:first-child").allInnerTexts();
 }
 
 test.describe("demo draft", () => {
@@ -149,6 +151,83 @@ test.describe("demo draft", () => {
     await startDemoDraft(page);
     // Server-sent events connect on load; the header says so out loud.
     await expect(page.getByTestId("connection-state")).toHaveText("LIVE");
+  });
+
+  test("the command palette finds a player by name", async ({ page }) => {
+    await startDemoDraft(page);
+
+    const names = await boardNames(page);
+    const target = names[3];
+
+    await page.keyboard.press("ControlOrMeta+k");
+    const palette = page.getByRole("dialog", { name: "Command palette" });
+    await expect(palette).toBeVisible();
+
+    await page.keyboard.type(target.slice(0, 5));
+    await palette.getByText(target, { exact: true }).click();
+
+    // The palette selects the player on the board and reveals the row, rather
+    // than opening the drawer over it.
+    const selected = page.locator('tbody tr[data-selected="true"]');
+    await expect(selected).toHaveCount(1);
+    await expect(selected.locator("td:nth-child(2) span:first-child")).toHaveText(
+      target,
+    );
+    await expect(selected).toBeInViewport();
+  });
+
+  test("the command palette runs a filter command", async ({ page }) => {
+    await startDemoDraft(page);
+
+    await page.keyboard.press("ControlOrMeta+k");
+    await page.getByRole("button", { name: "Show wide receivers" }).click();
+
+    await expect(page.getByRole("dialog", { name: "Command palette" })).toBeHidden();
+    // Every remaining row is a receiver. Receivers rather than quarterbacks:
+    // in a one-QB league no quarterback is inside the top of the board at pick
+    // one, so a QB filter is legitimately empty there.
+    const positions = await page.locator("tbody tr td:nth-child(3)").allInnerTexts();
+    expect(positions.length).toBeGreaterThan(0);
+    expect(new Set(positions.map((text) => text.trim()))).toEqual(new Set(["WR"]));
+  });
+
+  test("a favourited player survives a reload", async ({ page }) => {
+    await startDemoDraft(page);
+
+    const first = page.locator("tbody tr").first();
+    const name = (
+      await first.locator("td:nth-child(2) span:first-child").innerText()
+    ).trim();
+    await first.getByRole("button", { name: `Star ${name}` }).click();
+    await expect(first.getByRole("button", { name: `Unstar ${name}` })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await page.reload();
+    await expect(page.locator("tbody tr").first()).toBeVisible();
+
+    // Favourites live in localStorage, so the star is still lit after a reload.
+    await expect(page.getByRole("button", { name: `Unstar ${name}` })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  test("the theme can be changed and is remembered", async ({ page }) => {
+    await startDemoDraft(page);
+
+    const toggle = page.getByRole("button", { name: /^theme:/ });
+    await expect(toggle).toHaveText("theme: dark");
+
+    await toggle.click();
+    await expect(toggle).toHaveText("theme: light");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+    await page.reload();
+    await expect(page.getByRole("button", { name: /^theme:/ })).toHaveText(
+      "theme: light",
+    );
   });
 
   test("an unknown draft fails with a useful message, not a blank page", async ({

@@ -61,6 +61,10 @@ function setup(overrides: Partial<Parameters<typeof BestAvailable>[0]> = {}) {
     onToggleCompare: vi.fn(),
     onDraft: vi.fn(),
     isOnTheClock: false,
+    favourites: new Set<string>(),
+    onToggleFavourite: vi.fn(),
+    filter: "ALL" as const,
+    onFilterChange: vi.fn(),
     ...overrides,
   };
   render(<BestAvailable {...props} />);
@@ -74,37 +78,62 @@ describe("BestAvailable", () => {
     expect(screen.getByText("Charlie Passer")).toBeInTheDocument();
   });
 
-  it("filters to a single position", async () => {
-    setup();
+  it("reports a filter change rather than owning the state", async () => {
+    // The filter is controlled by the war room, so the command palette and the
+    // buttons can both drive it without two sources of truth.
+    const props = setup();
     await userEvent.click(screen.getByRole("button", { name: "QB" }));
+    expect(props.onFilterChange).toHaveBeenCalledWith("QB");
+  });
+
+  it("filters to a single position", () => {
+    setup({ filter: "QB" });
 
     expect(screen.getByText("Charlie Passer")).toBeInTheDocument();
     expect(screen.queryByText("Alpha Back")).not.toBeInTheDocument();
   });
 
-  it("treats flex as RB, WR and TE together", async () => {
-    setup();
-    await userEvent.click(screen.getByRole("button", { name: "Flex" }));
+  it("treats flex as RB, WR and TE together", () => {
+    setup({ filter: "FLEX" });
 
     expect(screen.getByText("Alpha Back")).toBeInTheDocument();
     expect(screen.getByText("Bravo Receiver")).toBeInTheDocument();
     expect(screen.queryByText("Charlie Passer")).not.toBeInTheDocument();
   });
 
-  it("value filter surfaces only genuine fallers", async () => {
-    setup();
-    await userEvent.click(screen.getByRole("button", { name: "Value" }));
+  it("value filter surfaces only genuine fallers", () => {
+    setup({ filter: "VALUE" });
 
     expect(screen.getByText("Echo Value")).toBeInTheDocument();
     expect(screen.queryByText("Alpha Back")).not.toBeInTheDocument();
   });
 
-  it("healthy filter excludes high-risk players", async () => {
-    setup();
-    await userEvent.click(screen.getByRole("button", { name: "Healthy" }));
+  it("healthy filter excludes high-risk players", () => {
+    setup({ filter: "HEALTHY" });
 
     expect(screen.queryByText("Delta Risk")).not.toBeInTheDocument();
     expect(screen.getByText("Alpha Back")).toBeInTheDocument();
+  });
+
+  it("favourites filter shows only starred players", () => {
+    setup({ filter: "FAVOURITES", favourites: new Set(["wr1"]) });
+
+    expect(screen.getByText("Bravo Receiver")).toBeInTheDocument();
+    expect(screen.queryByText("Alpha Back")).not.toBeInTheDocument();
+  });
+
+  it("starring a player does not also select the row", async () => {
+    const props = setup();
+    await userEvent.click(screen.getByRole("button", { name: /^Star Alpha Back/ }));
+
+    expect(props.onToggleFavourite).toHaveBeenCalledWith("rb1");
+    expect(props.onSelect).not.toHaveBeenCalled();
+  });
+
+  it("a starred player reads as pressed and offers to unstar", () => {
+    setup({ favourites: new Set(["rb1"]) });
+    const star = screen.getByRole("button", { name: /^Unstar Alpha Back/ });
+    expect(star).toHaveAttribute("aria-pressed", "true");
   });
 
   it("searches by name and by team", async () => {

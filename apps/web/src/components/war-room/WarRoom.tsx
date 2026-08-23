@@ -6,7 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Panel } from "@/components/ui/Panel";
 import { AlertRail } from "@/components/war-room/AlertRail";
-import { BestAvailable } from "@/components/war-room/BestAvailable";
+import { BestAvailable, type Filter } from "@/components/war-room/BestAvailable";
+import { CommandPalette, type Command } from "@/components/war-room/CommandPalette";
 import { CompareTray } from "@/components/war-room/CompareTray";
 import { DraftTicker } from "@/components/war-room/DraftTicker";
 import { HeadlinePicks } from "@/components/war-room/HeadlinePicks";
@@ -17,6 +18,8 @@ import { ScarcityStrip } from "@/components/war-room/ScarcityStrip";
 import { TopRail } from "@/components/war-room/TopRail";
 import { api, ApiError } from "@/lib/api";
 import { useDraftStream } from "@/lib/useDraftStream";
+import { useFavourites } from "@/lib/useFavourites";
+import { useTheme } from "@/lib/useTheme";
 
 const MAX_COMPARE = 4;
 
@@ -28,12 +31,33 @@ const MAX_COMPARE = 4;
  * board that drifts from the engine's answer is worse than a board that lags by
  * 200ms, because the manager cannot tell which one they are looking at.
  */
+/**
+ * Palette wording for each board filter. Written out rather than derived from
+ * the filter keys, because the derived form reads "Show te" — the palette is
+ * something you scan under a clock, so it gets real words.
+ */
+const FILTER_COMMANDS: { key: Filter; label: string }[] = [
+  { key: "ALL", label: "Show all players" },
+  { key: "QB", label: "Show quarterbacks" },
+  { key: "RB", label: "Show running backs" },
+  { key: "WR", label: "Show wide receivers" },
+  { key: "TE", label: "Show tight ends" },
+  { key: "FLEX", label: "Show flex-eligible players" },
+  { key: "VALUE", label: "Show value picks" },
+  { key: "HEALTHY", label: "Show healthy players" },
+  { key: "FAVOURITES", label: "Show favourites" },
+];
+
 export function WarRoom({ simulationId }: { simulationId: string }) {
   const queryClient = useQueryClient();
   const [selectedUuid, setSelectedUuid] = useState<string | null>(null);
   const [inspectUuid, setInspectUuid] = useState<string | null>(null);
   const [comparing, setComparing] = useState<string[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("ALL");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const favourites = useFavourites();
+  const { theme, cycle: cycleTheme } = useTheme();
 
   const boardQuery = useQuery({
     queryKey: ["board", simulationId],
@@ -99,8 +123,19 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      const typing = target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+
+      // The palette is the one shortcut that works while typing, because it is
+      // how you get *out* of a field and into a command.
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
+      if (typing) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      if (event.key === "f" && selectedUuid) favourites.toggle(selectedUuid);
 
       // Advancing and drafting are simulator actions. On a live draft the room
       // makes the picks, so these keys do nothing rather than 409.
@@ -111,7 +146,74 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [advance, draft, selectedUuid, isDemo]);
+  }, [advance, draft, selectedUuid, isDemo, favourites]);
+
+  // Built here rather than inside the palette so every command closes over the
+  // same state the rest of the screen is reading.
+  const commands: Command[] = [
+    ...FILTER_COMMANDS.map(({ key, label }) => ({
+      id: `filter:${key}`,
+      label,
+      keywords: `filter position ${key}`,
+      run: () => setFilter(key),
+    })),
+    {
+      id: "favourite",
+      label: "Toggle favourite on the selected player",
+      hint: "f",
+      keywords: "star watch",
+      run: () => selectedUuid && favourites.toggle(selectedUuid),
+    },
+    {
+      id: "inspect",
+      label: "Open the selected player",
+      hint: "i",
+      keywords: "detail drawer health",
+      run: () => selectedUuid && setInspectUuid(selectedUuid),
+    },
+    {
+      id: "compare",
+      label: "Add the selected player to the comparison",
+      keywords: "versus vs",
+      run: () => selectedUuid && toggleCompare(selectedUuid),
+    },
+    {
+      id: "clear-compare",
+      label: "Clear the comparison",
+      keywords: "versus vs reset",
+      run: () => setComparing([]),
+    },
+    {
+      id: "theme",
+      label: "Cycle theme: dark, light, system",
+      keywords: "dark light appearance",
+      run: cycleTheme,
+    },
+    ...(isDemo
+      ? [
+          {
+            id: "advance",
+            label: "Advance one pick",
+            hint: "n",
+            keywords: "next simulate",
+            run: () => advance.mutate(1),
+          },
+          {
+            id: "advance-to-turn",
+            label: "Run to my next pick",
+            hint: "a",
+            keywords: "fast forward simulate",
+            run: () => advance.mutate(500),
+          },
+          {
+            id: "reset",
+            label: "Reset the draft",
+            keywords: "restart simulate",
+            run: () => reset.mutate(),
+          },
+        ]
+      : []),
+  ];
 
   if (boardQuery.isLoading) {
     return (
@@ -249,6 +351,10 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
             onToggleCompare={toggleCompare}
             onDraft={(uuid) => draft.mutate(uuid)}
             isOnTheClock={board.is_user_on_the_clock}
+            favourites={favourites.ids}
+            onToggleFavourite={favourites.toggle}
+            filter={filter}
+            onFilterChange={setFilter}
           />
         </Panel>
 
@@ -319,13 +425,29 @@ export function WarRoom({ simulationId }: { simulationId: string }) {
 
       <footer className="flex shrink-0 items-center gap-4 border-t bg-[var(--surface-panel)] px-4 py-1.5">
         <span className="rail-label">
-          n next · a to my pick · enter draft selected · i inspect · esc close
+          ⌘K commands · n next · a to my pick · enter draft · f favourite · i inspect
         </span>
+        <button
+          type="button"
+          onClick={cycleTheme}
+          className="rail-label transition-colors hover:text-[var(--accent)]"
+          title="Cycle dark, light, and system themes"
+        >
+          theme: {theme}
+        </button>
         <span className="rail-label ml-auto">
           {board.provenance.map((entry) => entry.source).join(" · ") ||
             "no projection or ADP source"}
         </span>
       </footer>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={commands}
+        players={board.recommendations}
+        onSelectPlayer={setSelectedUuid}
+      />
 
       <PlayerDrawer
         simulationId={simulationId}

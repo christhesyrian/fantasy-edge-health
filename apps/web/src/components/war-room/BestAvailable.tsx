@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { bandOf } from "@/components/war-room/RecommendationPanel";
 import { RiskBadge } from "@/components/ui/RiskBadge";
@@ -8,7 +8,8 @@ import { cn } from "@/lib/cn";
 import { num, pct, signed } from "@/lib/format";
 import type { Recommendation } from "@/lib/types";
 
-type Filter = "ALL" | "QB" | "RB" | "WR" | "TE" | "FLEX" | "VALUE" | "HEALTHY";
+type Filter =
+  "ALL" | "QB" | "RB" | "WR" | "TE" | "FLEX" | "VALUE" | "HEALTHY" | "FAVOURITES";
 
 const FILTERS: { key: Filter; label: string; hint: string }[] = [
   { key: "ALL", label: "All", hint: "Every available player" },
@@ -19,6 +20,7 @@ const FILTERS: { key: Filter; label: string; hint: string }[] = [
   { key: "FLEX", label: "Flex", hint: "RB, WR and TE" },
   { key: "VALUE", label: "Value", hint: "Falling past their ADP" },
   { key: "HEALTHY", label: "Healthy", hint: "Low measured availability risk" },
+  { key: "FAVOURITES", label: "★", hint: "Players you have starred" },
 ];
 
 const VERDICT_ABBREV: Record<string, { text: string; className: string }> = {
@@ -30,10 +32,16 @@ const VERDICT_ABBREV: Record<string, { text: string; className: string }> = {
   AVOID: { text: "AVOID", className: "text-[var(--color-hazard-400)]" },
 };
 
-function matches(row: Recommendation, filter: Filter): boolean {
+function matches(
+  row: Recommendation,
+  filter: Filter,
+  favourites: ReadonlySet<string>,
+): boolean {
   switch (filter) {
     case "ALL":
       return true;
+    case "FAVOURITES":
+      return favourites.has(row.player_uuid);
     case "FLEX":
       return ["RB", "WR", "TE"].includes(row.position);
     case "VALUE":
@@ -54,6 +62,8 @@ function matches(row: Recommendation, filter: Filter): boolean {
  * comparing twenty players on six numbers, and cards make that comparison
  * impossible.
  */
+export type { Filter };
+
 export function BestAvailable({
   rows,
   selectedUuid,
@@ -63,6 +73,10 @@ export function BestAvailable({
   onToggleCompare,
   onDraft,
   isOnTheClock,
+  favourites,
+  onToggleFavourite,
+  filter,
+  onFilterChange,
 }: {
   rows: Recommendation[];
   selectedUuid: string | null;
@@ -72,20 +86,32 @@ export function BestAvailable({
   onToggleCompare: (uuid: string) => void;
   onDraft: (uuid: string) => void;
   isOnTheClock: boolean;
+  favourites: ReadonlySet<string>;
+  onToggleFavourite: (uuid: string) => void;
+  filter: Filter;
+  onFilterChange: (filter: Filter) => void;
 }) {
-  const [filter, setFilter] = useState<Filter>("ALL");
   const [query, setQuery] = useState("");
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return rows.filter(
       (row) =>
-        matches(row, filter) &&
+        matches(row, filter, favourites) &&
         (needle === "" ||
           row.name.toLowerCase().includes(needle) ||
           (row.team ?? "").toLowerCase().includes(needle)),
     );
-  }, [rows, filter, query]);
+  }, [rows, filter, query, favourites]);
+
+  // Reveal whatever is selected. The palette and the arrow keys can both land on
+  // a player far down a hundred-row table, and a selection you cannot see reads
+  // as the command having done nothing at all. "nearest" so an already-visible
+  // row does not jump.
+  const selectedRowRef = useRef<HTMLTableRowElement | null>(null);
+  useEffect(() => {
+    selectedRowRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [selectedUuid]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -95,7 +121,7 @@ export function BestAvailable({
             key={entry.key}
             type="button"
             title={entry.hint}
-            onClick={() => setFilter(entry.key)}
+            onClick={() => onFilterChange(entry.key)}
             aria-pressed={filter === entry.key}
             className={cn(
               "display border px-2 py-1 text-[0.7rem] transition-colors",
@@ -132,7 +158,7 @@ export function BestAvailable({
                 { label: "Risk", align: "text-left w-[3.6rem]" },
                 { label: "Surv", align: "text-right w-[2.9rem]" },
                 { label: "Call", align: "text-left w-[3.1rem]" },
-                { label: "", align: "w-[3.4rem]" },
+                { label: "", align: "w-[4.2rem]" },
               ].map((column) => (
                 <th
                   key={column.label}
@@ -154,6 +180,8 @@ export function BestAvailable({
               return (
                 <tr
                   key={row.player_uuid}
+                  ref={isSelected ? selectedRowRef : undefined}
+                  data-selected={isSelected ? "true" : undefined}
                   onClick={() => onSelect(row.player_uuid)}
                   onDoubleClick={() => onInspect(row.player_uuid)}
                   style={{ ["--i" as string]: Math.min(index, 30) }}
@@ -231,6 +259,25 @@ export function BestAvailable({
                   </td>
                   <td className="px-1.5 py-1.5">
                     <div className="flex items-center justify-end gap-1">
+                      <button
+                        type="button"
+                        aria-label={`${
+                          favourites.has(row.player_uuid) ? "Unstar" : "Star"
+                        } ${row.name}`}
+                        aria-pressed={favourites.has(row.player_uuid)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onToggleFavourite(row.player_uuid);
+                        }}
+                        className={cn(
+                          "px-1 text-[0.75rem] leading-none transition-colors",
+                          favourites.has(row.player_uuid)
+                            ? "text-[var(--accent)]"
+                            : "text-[var(--color-pit-500)] hover:text-[var(--text-secondary)]",
+                        )}
+                      >
+                        ★
+                      </button>
                       <button
                         type="button"
                         aria-label={`Compare ${row.name}`}
