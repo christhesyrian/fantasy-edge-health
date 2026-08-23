@@ -4,8 +4,8 @@
 decisions and their reasoning, the bugs already found, and the ordered backlog —
 so none of it has to be re-derived.
 
-- **Last updated:** 2026-08-22
-- **Branch:** `master`, 12 commits, working tree clean
+- **Last updated:** 2026-08-23
+- **Branch:** `master`, 15 commits, working tree clean
 - **Governing spec:** [`docs/MASTER_BUILD_DIRECTIVE.md`](docs/MASTER_BUILD_DIRECTIVE.md)
 
 ---
@@ -26,8 +26,8 @@ functional tooling config, not credit.
 make quality        # format, lint, mypy, pytest, then the frontend gates
 ```
 
-Expected: **411 Python tests**, **33 frontend tests**, ruff clean, `mypy --strict`
-clean across 98 files, eslint clean, `tsc` clean.
+Expected: **459 Python tests**, **33 frontend tests**, ruff clean, `mypy --strict`
+clean across 109 files, eslint clean, `tsc` clean.
 
 See it run:
 
@@ -125,30 +125,36 @@ Each has a regression test named after the symptom.
    first `__anext__`, so events published in that window were lost.
 10. **`EventSource.onmessage` never fired** — the server emits *named* events.
     The stream connected, reported LIVE, and delivered nothing.
-11. `@unique` enum crash from a duplicate alias; `cached_property` incompatible
+11. **Weekly stats read from a dead release path** — the legacy `player_stats`
+    tag 404s for recent seasons; the maintained one is `stats_player`.
+12. **Identity resolution discarded identifiers** when a gsis_id came directly
+    from Sleeper, halving `pfr_id` coverage and leaving snap counts unjoinable
+    for 2,336 players a season.
+13. **A live draft reported "drafting" forever** — pick arithmetic cannot know a
+    draft ended early, so the provider's own status now wins.
+14. `@unique` enum crash from a duplicate alias; `cached_property` incompatible
     with `slots=True`; `user_draft_slot=None` could not express "no human seat".
 
 ---
 
 ## 5. What is NOT built — resume here
 
-### Next: wire the live Sleeper draft end to end
-The poller (`src/fhe/worker/draft_poller.py`) and onboarding endpoints exist and
-are tested, but nothing connects them to a war room session. Needed:
-- Persist a connected league/draft into `fantasy_leagues` / `drafts`
-- A `DraftSession` backed by a live draft rather than a simulator
-- An endpoint to connect a draft and start its poller
-- Onboarding UI (the button currently, correctly, says "not yet wired up")
-
-### Then
-- **Weekly stats + snap counts ingestion** — workload is the weakest-evidenced
-  input to the health model
+### Next
+- **Data quality checks** writing to `data_quality_results` (directive §13).
+  The table exists and is queried by the diagnostics endpoint, but nothing
+  writes to it yet.
 - **Playwright E2E** over the demo path (directive §32)
-- **ML** (`src/fhe/ml/` is empty) — only after workload features exist; see
-  `docs/MODEL_CARD.md` for the promotion bar
-- **Data quality checks** writing to `data_quality_results` (directive §13)
+- **ML** (`src/fhe/ml/` is empty) — now unblocked, since workload features
+  exist. `docs/MODEL_CARD.md` states the promotion bar; do not lower it.
 - **Command palette, favourites, light mode toggle** (directive §22, §10)
 - **Docker Compose verification** — never run, because the daemon was down
+
+### Done since the last handoff
+- Live Sleeper draft wired end to end: connect, DB-backed player pool, poller
+  supervision, and a unified `/drafts/{id}` API serving live and simulated
+  drafts identically.
+- Weekly stats and snap counts ingested, so the health model's workload terms
+  are measured rather than absent.
 
 ---
 
