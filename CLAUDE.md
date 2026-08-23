@@ -1,10 +1,12 @@
 # Fantasy Health Edge — engineering conventions
 
-Persistent rules for working in this repository. Procedures live in
-`.claude/skills/`; this file is only what must always be true.
+Persistent rules for working in this repository. This file is only what must
+always be true; it is checked in because it governs the code, not the tooling.
 
 The governing specification is [`docs/MASTER_BUILD_DIRECTIVE.md`](docs/MASTER_BUILD_DIRECTIVE.md).
 Current state and the ordered backlog are in [`HANDOFF.md`](HANDOFF.md).
+Frontend boundaries and the API contract are in
+[`docs/V0_HANDOFF.md`](docs/V0_HANDOFF.md).
 
 ## Environment
 
