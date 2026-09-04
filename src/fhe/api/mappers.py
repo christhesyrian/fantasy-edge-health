@@ -12,6 +12,7 @@ from fhe.api.schemas import (
     DraftPickOut,
     HealthOut,
     InjuryEventOut,
+    InjurySpellOut,
     LeagueSettingsOut,
     PlayerDetail,
     PlayerSummary,
@@ -32,6 +33,7 @@ from fhe.core.draft.models import DraftablePlayer, DraftPick
 from fhe.core.draft.roster import compute_roster_need
 from fhe.core.draft.scarcity import PositionScarcity
 from fhe.core.health.models import HealthAssessment
+from fhe.core.health.spells import collapse_to_spells
 from fhe.core.league import LeagueSettings
 from fhe.core.types import SLOT_ELIGIBILITY, Position, RosterSlot
 
@@ -99,6 +101,25 @@ def player_detail(player: DraftablePlayer, *, is_demo: bool) -> PlayerDetail:
             for event in sorted(
                 player.injury_history,
                 key=lambda e: (e.season, e.week or 0),
+                reverse=True,
+            )
+        ],
+        injury_spells=[
+            InjurySpellOut(
+                body_region=spell.region.value,
+                first_season=spell.first_season,
+                last_season=spell.last_season,
+                first_week=spell.first_week,
+                last_week=spell.last_week,
+                reports=spell.reports,
+                weeks_absent=spell.missed_weeks,
+                worst_designation=spell.worst_designation.value,
+                raw_descriptors=list(spell.raw_descriptors),
+                recurrence_class=spell.region.recurrence_class.value,
+            )
+            for spell in sorted(
+                collapse_to_spells(player.injury_history),
+                key=lambda s: (s.first_season, s.first_week or 0),
                 reverse=True,
             )
         ],

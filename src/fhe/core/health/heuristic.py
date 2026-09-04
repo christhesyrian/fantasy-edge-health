@@ -27,6 +27,7 @@ from fhe.core.health.models import (
     HealthInputs,
     RiskComponent,
 )
+from fhe.core.health.spells import InjurySpell, collapse_to_spells
 from fhe.core.injury.practice import practice_trajectory
 from fhe.core.types import (
     BodyRegion,
@@ -34,9 +35,10 @@ from fhe.core.types import (
     Position,
     PracticeStatus,
     PracticeTrajectory,
+    RecurrenceClass,
 )
 
-MODEL_VERSION: Final = "heuristic-v1"
+MODEL_VERSION: Final = "heuristic-v2"
 
 SCORE_MIN: Final = 0.0
 SCORE_MAX: Final = 100.0
@@ -87,18 +89,45 @@ _MAX_DNP_RUN_COUNTED: Final = 3
 _HISTORY_LOOKBACK_SEASONS: Final = 3
 # Per-season recency weights, most recent first.
 _RECENCY_WEIGHTS: Final[tuple[float, ...]] = (1.0, 0.6, 0.3)
-# Points per weighted distinct injury event, capped below.
-_POINTS_PER_WEIGHTED_EVENT: Final = 2.2
+# Points per weighted injury *spell* - one continuous absence, however many
+# weekly reports it generated. Higher than the per-report value it replaced
+# because collapsing the archive's rows into spells cuts the count roughly in
+# half; see fhe.core.health.spells for why counting rows was wrong.
+_POINTS_PER_WEIGHTED_SPELL: Final = 4.0
 _MAX_HISTORY_POINTS: Final = 18.0
 
+# How much a past injury to a region counts toward a player's burden, by how
+# well that region predicts the next injury. The public report names a body part
+# and never a mechanism, so this is the only defensible discount available - but
+# it is the one that matters, because it separates the receiver who tears a
+# hamstring every September from the quarterback who had his elbow driven into
+# the turf once and healed.
+_PRONENESS_WEIGHT: Final[dict[RecurrenceClass, float]] = {
+    RecurrenceClass.SOFT_TISSUE: 1.0,
+    RecurrenceClass.PERSISTENT: 0.85,
+    RecurrenceClass.IMPACT: 0.4,
+    RecurrenceClass.UNINFORMATIVE: 0.5,
+}
+
 # Repeated injuries to the same region are the most durable predictor in the
-# public literature, and soft-tissue recurrence is stronger still.
-_RECURRENCE_POINTS: Final = 5.0
-_SOFT_TISSUE_RECURRENCE_POINTS: Final = 8.0
+# public literature, and soft-tissue recurrence is stronger still. These apply
+# per *additional* spell, so a single long absence never triggers them.
+_RECURRENCE_POINTS: Final[dict[RecurrenceClass, float]] = {
+    RecurrenceClass.SOFT_TISSUE: 8.0,
+    RecurrenceClass.PERSISTENT: 5.0,
+    # Breaking the same hand twice is closer to bad luck twice than to a
+    # property of the player, so it is noted without being punished as a pattern.
+    RecurrenceClass.IMPACT: 2.0,
+    RecurrenceClass.UNINFORMATIVE: 1.0,
+}
 _MAX_RECURRENCE_POINTS: Final = 16.0
 
-# Games actually missed is the outcome the model ultimately cares about.
-_POINTS_PER_GAME_MISSED: Final = 1.1
+# Time actually lost is the outcome the model ultimately cares about, and the
+# only component that separates a season-ending tear from a one-week strain.
+# Discounted by the same proneness weight as the burden: a long absence already
+# served and recovered from says less about the coming season than an area that
+# keeps failing does.
+_POINTS_PER_WEEK_MISSED: Final = 1.1
 _MAX_GAMES_MISSED_POINTS: Final = 14.0
 
 # --------------------------------------------------------------------------
@@ -242,7 +271,13 @@ def _practice_components(
 
 
 def _history_components(inputs: HealthInputs) -> list[RiskComponent]:
-    """Risk from prior injury events, recurrence, and games actually missed."""
+    """Risk from prior injury spells, recurrence, and games actually missed.
+
+    Works in *spells* rather than weekly reports. The distinction is the whole
+    point: a player who misses eight weeks with one injury has been injured
+    once, and scoring him as though he were injured eight times punishes the
+    severity of a healed problem and, worse, calls it a recurring one.
+    """
     components: list[RiskComponent] = []
     if not inputs.injury_history:
         return components
@@ -251,48 +286,61 @@ def _history_components(inputs: HealthInputs) -> list[RiskComponent]:
 
     # Only injuries count toward burden; rest days and personal matters do not.
     injuries = [
-        e
-        for e in inputs.injury_history
-        if e.region not in {BodyRegion.REST, BodyRegion.NON_INJURY}
-        and 0 <= reference_season - e.season < _HISTORY_LOOKBACK_SEASONS
+        e for e in inputs.injury_history if e.region not in {BodyRegion.REST, BodyRegion.NON_INJURY}
     ]
-    if not injuries:
+    # Reports are collapsed before the lookback window is applied, so an injury
+    # that began just outside the window and was still being reported inside it
+    # stays one spell.
+    spells = [
+        spell
+        for spell in collapse_to_spells(injuries)
+        if 0 <= reference_season - spell.last_season < _HISTORY_LOOKBACK_SEASONS
+    ]
+    if not spells:
         return components
 
-    weighted = 0.0
-    for event in injuries:
-        age_in_seasons = reference_season - event.season
-        weighted += _RECENCY_WEIGHTS[min(age_in_seasons, len(_RECENCY_WEIGHTS) - 1)]
+    def _recency(spell: InjurySpell) -> float:
+        age_in_seasons = reference_season - spell.last_season
+        return _RECENCY_WEIGHTS[min(age_in_seasons, len(_RECENCY_WEIGHTS) - 1)]
 
-    burden = min(_MAX_HISTORY_POINTS, weighted * _POINTS_PER_WEIGHTED_EVENT)
+    def _proneness(spell: InjurySpell) -> float:
+        return _PRONENESS_WEIGHT[spell.region.recurrence_class]
+
+    weighted = sum(_recency(spell) * _proneness(spell) for spell in spells)
+    burden = min(_MAX_HISTORY_POINTS, weighted * _POINTS_PER_WEIGHTED_SPELL)
     if burden > 0:
+        discounted = [s for s in spells if s.region.recurrence_class is RecurrenceClass.IMPACT]
+        aside = (
+            f" {len(discounted)} to areas that heal rather than recur, counted lightly."
+            if discounted
+            else ""
+        )
         components.append(
             RiskComponent(
                 name="injury_burden",
                 label="Injury history",
                 points=burden,
                 detail=(
-                    f"{len(injuries)} injury report"
-                    f"{'s' if len(injuries) != 1 else ''} in the last "
-                    f"{_HISTORY_LOOKBACK_SEASONS} seasons, recency-weighted."
+                    f"{len(spells)} separate injur{'ies' if len(spells) != 1 else 'y'} in the "
+                    f"last {_HISTORY_LOOKBACK_SEASONS} seasons, recency-weighted.{aside}"
                 ),
             )
         )
 
-    # Recurrence by region.
+    # Recurrence by region, counted in spells. A single injury reported over
+    # many weeks is one spell and so can never look like a pattern.
     by_region: dict[BodyRegion, int] = {}
-    for event in injuries:
-        if event.region in {BodyRegion.UNDISCLOSED, BodyRegion.OTHER_UNKNOWN}:
+    for spell in spells:
+        if spell.region in {BodyRegion.UNDISCLOSED, BodyRegion.OTHER_UNKNOWN}:
             continue
-        by_region[event.region] = by_region.get(event.region, 0) + 1
+        by_region[spell.region] = by_region.get(spell.region, 0) + 1
 
     recurrence = 0.0
     recurring: list[str] = []
     for region, count in by_region.items():
         if count < 2:
             continue
-        per_event = _SOFT_TISSUE_RECURRENCE_POINTS if region.is_soft_tissue else _RECURRENCE_POINTS
-        recurrence += per_event * (count - 1)
+        recurrence += _RECURRENCE_POINTS[region.recurrence_class] * (count - 1)
         recurring.append(f"{region.value.replace('_', ' ').lower()} x{count}")
     if recurrence > 0:
         components.append(
@@ -300,19 +348,23 @@ def _history_components(inputs: HealthInputs) -> list[RiskComponent]:
                 name="recurrent_injury",
                 label="Recurring area",
                 points=min(_MAX_RECURRENCE_POINTS, recurrence),
-                detail=f"Repeated reports in the same area: {', '.join(sorted(recurring))}.",
+                detail=(f"Separate injuries to the same area: {', '.join(sorted(recurring))}."),
             )
         )
 
-    # Games actually missed.
-    missed = sum(e.games_missed for e in injuries if e.games_missed)
-    if missed:
+    # Time lost, weighted by recency and by how much the area predicts a repeat.
+    weighted_weeks = sum(_recency(s) * _proneness(s) * s.missed_weeks for s in spells)
+    if weighted_weeks > 0:
+        total = sum(s.missed_weeks for s in spells)
         components.append(
             RiskComponent(
                 name="games_missed",
-                label="Games missed",
-                points=min(_MAX_GAMES_MISSED_POINTS, missed * _POINTS_PER_GAME_MISSED),
-                detail=f"{missed} game{'s' if missed != 1 else ''} missed to injury recently.",
+                label="Time lost",
+                points=min(_MAX_GAMES_MISSED_POINTS, weighted_weeks * _POINTS_PER_WEEK_MISSED),
+                detail=(
+                    f"Listed unavailable in at least {total} week"
+                    f"{'s' if total != 1 else ''} across those injuries."
+                ),
             )
         )
     return components

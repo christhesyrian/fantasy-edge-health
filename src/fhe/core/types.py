@@ -283,6 +283,22 @@ class PracticeTrajectory(StrEnum):
 
 
 @unique
+class RecurrenceClass(StrEnum):
+    """How predictive a past injury to a region is of a future one.
+
+    The heuristic health model uses this to answer a question managers ask out
+    loud every August: does last season's injury still count against a player?
+    For a hamstring the honest answer is yes; for a healed dislocated elbow it
+    is mostly no.
+    """
+
+    SOFT_TISSUE = "SOFT_TISSUE"
+    PERSISTENT = "PERSISTENT"
+    IMPACT = "IMPACT"
+    UNINFORMATIVE = "UNINFORMATIVE"
+
+
+@unique
 class BodyRegion(StrEnum):
     """Controlled injury taxonomy.
 
@@ -312,24 +328,63 @@ class BodyRegion(StrEnum):
     OTHER_UNKNOWN = "OTHER_UNKNOWN"
 
     @property
+    def recurrence_class(self) -> RecurrenceClass:
+        """How much a past injury here predicts the next one."""
+        return _RECURRENCE_CLASS.get(self, RecurrenceClass.UNINFORMATIVE)
+
+    @property
     def is_soft_tissue(self) -> bool:
         """Soft-tissue regions, which carry elevated re-aggravation risk.
 
         Used by the heuristic health model to weight recurrent same-region
         events more heavily than, say, a repeated hand injury.
         """
-        return self in _SOFT_TISSUE_REGIONS
+        return self.recurrence_class is RecurrenceClass.SOFT_TISSUE
 
 
-_SOFT_TISSUE_REGIONS = frozenset(
-    {
-        BodyRegion.HAMSTRING,
-        BodyRegion.QUADRICEPS,
-        BodyRegion.CALF,
-        BodyRegion.HIP_GROIN,
-        BodyRegion.ACHILLES,
-    }
-)
+# A public injury report names a body part and nothing else: never a mechanism,
+# never a diagnosis. So the system cannot know that an elbow was dislocated by a
+# helmet rather than worn out over a season. What it *can* use is the one thing
+# the region itself carries - how strongly an injury there predicts the next one
+# - which is why the classification is named for recurrence rather than for
+# cause. Anything stronger would be inventing an external fact.
+_RECURRENCE_CLASS: dict[BodyRegion, RecurrenceClass] = {
+    # Non-contact strains. The best-established recurrence finding in the
+    # literature: a prior hamstring strain is the strongest single predictor of
+    # the next one, and the same pattern holds across the muscle group.
+    BodyRegion.HAMSTRING: RecurrenceClass.SOFT_TISSUE,
+    BodyRegion.QUADRICEPS: RecurrenceClass.SOFT_TISSUE,
+    BodyRegion.CALF: RecurrenceClass.SOFT_TISSUE,
+    BodyRegion.HIP_GROIN: RecurrenceClass.SOFT_TISSUE,
+    BodyRegion.ACHILLES: RecurrenceClass.SOFT_TISSUE,
+    # Joints and structures that stay compromised: laxity, degeneration and
+    # scar tissue outlive the absence, so the second report is rarely a
+    # coincidence.
+    BodyRegion.KNEE: RecurrenceClass.PERSISTENT,
+    BodyRegion.ANKLE: RecurrenceClass.PERSISTENT,
+    BodyRegion.FOOT_TOE: RecurrenceClass.PERSISTENT,
+    BodyRegion.BACK: RecurrenceClass.PERSISTENT,
+    BodyRegion.SHOULDER: RecurrenceClass.PERSISTENT,
+    BodyRegion.NECK: RecurrenceClass.PERSISTENT,
+    # Head is deliberately placed with the persistent group even though the
+    # taxonomy cannot separate a concussion from a facial cut. Repeat-concussion
+    # risk is well documented, and where the coarse mapping forces a choice the
+    # health model takes the side that does not understate risk.
+    BodyRegion.HEAD: RecurrenceClass.PERSISTENT,
+    # Bones and joints that break or dislocate on impact and then heal. A
+    # cornerback's helmet is not a property of the player's body, so a healed
+    # collarbone says far less about next season than a healed hamstring does.
+    BodyRegion.ARM_ELBOW: RecurrenceClass.IMPACT,
+    BodyRegion.HAND_WRIST_FINGER: RecurrenceClass.IMPACT,
+    BodyRegion.TORSO_RIBS: RecurrenceClass.IMPACT,
+    # Illness and unlabelled reports carry real absence but no signal about the
+    # player's durability, and rest days are not injuries at all.
+    BodyRegion.ILLNESS: RecurrenceClass.UNINFORMATIVE,
+    BodyRegion.UNDISCLOSED: RecurrenceClass.UNINFORMATIVE,
+    BodyRegion.OTHER_UNKNOWN: RecurrenceClass.UNINFORMATIVE,
+    BodyRegion.REST: RecurrenceClass.UNINFORMATIVE,
+    BodyRegion.NON_INJURY: RecurrenceClass.UNINFORMATIVE,
+}
 
 
 @unique

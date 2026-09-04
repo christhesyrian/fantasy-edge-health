@@ -34,7 +34,7 @@ a hard rule, not a stylistic preference.
 
 ### Heuristic (active)
 
-`heuristic-v1`. Transparent, additive, every weight a named constant with stated
+`heuristic-v2`. Transparent, additive, every weight a named constant with stated
 reasoning. It works from day one, needs no training data, and is always the
 fallback.
 
@@ -115,13 +115,60 @@ unreported day is missing data, not partial participation.
 
 Three seasons, recency-weighted 1.0 / 0.6 / 0.3.
 
-- **Burden**: 2.2 points per weighted event, capped at 18.
-- **Recurrence**: 5 points per repeat in the same region, 8 for soft tissue
-  (hamstring, quadriceps, calf, hip/groin, achilles), capped at 16. Repeated
-  injuries to the same area are the most durable predictor in the public
-  literature, and soft-tissue recurrence is stronger still.
-- **Games missed**: 1.1 points each, capped at 14. This is the outcome the model
-  actually cares about.
+#### Reports are collapsed into injuries first
+
+The provider archive holds one row per weekly injury report, so a quarterback who
+dislocates an elbow in week 10 and misses the rest of the season arrives as nine
+"Elbow" rows. Until `heuristic-v2` the model counted those rows, which was wrong
+twice and wrong in the same direction: a player's burden scaled with how *long*
+one injury kept him out, and every multi-week absence tripped the recurrence
+penalty that exists to flag the player who pulls the same hamstring every autumn.
+Against the real archive, 1,389 of 3,245 player-season-region groups hold two or
+more rows, so recurrence was firing on roughly two fifths of them for no reason
+beyond an injury lasting more than a week.
+
+[`fhe.core.health.spells`](../src/fhe/core/health/spells.py) groups the rows back
+into **spells** — one continuous absence — before anything is scored. Reports join
+the same spell when they name the same region and fall within two weeks of each
+other, including across a season boundary, since a week 18 knee and the following
+week 1 knee are one injury.
+
+#### What the region can and cannot tell you
+
+A public injury report names a body part and never a mechanism, so the model
+cannot know that an elbow was dislocated by a helmet rather than worn out over a
+season. What the region *does* carry is how strongly an injury there predicts the
+next one, which is why the classification is named for recurrence rather than for
+cause. `BodyRegion.recurrence_class` puts every region in one of four groups:
+
+| Class | Regions | Burden weight | Per repeat |
+| --- | --- | --- | --- |
+| Soft tissue | hamstring, quadriceps, calf, hip/groin, achilles | 1.0 | 8 |
+| Persistent | knee, ankle, foot/toe, back, shoulder, neck, head | 0.85 | 5 |
+| Impact | arm/elbow, hand/wrist/finger, torso/ribs | 0.4 | 2 |
+| Uninformative | illness, undisclosed, unrecognised | 0.5 | 1 |
+
+A prior hamstring strain is the best-established single predictor of the next
+one. A healed collarbone is closer to a fact about a cornerback's helmet than a
+property of the player's body. Head sits with the persistent group even though
+the coarse taxonomy cannot separate a concussion from a facial cut: repeat
+concussion risk is well documented, and where the mapping forces a choice the
+model takes the side that does not understate risk.
+
+#### Components
+
+- **Burden**: 4.0 points per spell, multiplied by recency and by the burden
+  weight above, capped at 18.
+- **Recurrence**: the per-repeat points above, charged per *additional* spell in
+  the same region and capped at 16. A single long absence can never look like a
+  pattern.
+- **Time lost**: 1.1 points per week the player was listed unavailable, weighted
+  the same way, capped at 14. This is the outcome the model actually cares about
+  and the only component that separates a season-ending tear from an afternoon on
+  the exercise bike. It reads a provider's `games_missed` where one exists and
+  otherwise counts the weekly rows that carried an absent designation — a lower
+  bound, and load-bearing rather than theoretical, because nflverse supplies no
+  games-missed column at all and all 6,043 stored rows leave it null.
 
 Rest days and personal matters are excluded from burden entirely. Counting
 "Not injury related — resting player" as an injury would penalise exactly the

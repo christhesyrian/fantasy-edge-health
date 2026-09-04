@@ -8,13 +8,14 @@ Last evaluated: **2026-08-23**.
 
 ---
 
-## Model 1 — `heuristic-v1` (in production)
+## Model 1 — `heuristic-v2` (in production)
 
 | | |
 | --- | --- |
 | **Type** | Transparent additive scoring. Not learned. |
-| **Version** | 1.0 |
+| **Version** | 2.0 |
 | **Input** | Injury designation, practice trajectory, injury history, age, workload |
+| **Changed in 2.0** | Weekly injury reports are collapsed into distinct injuries before scoring, and history is weighted by how well the body region predicts a repeat |
 | **Output** | `risk_score` 0–100, `availability_estimate` 0–1, `confidence` 0–1, plus the signed components that sum to the raw score |
 | **Source** | [`src/fhe/core/health/heuristic.py`](../src/fhe/core/health/heuristic.py) |
 
@@ -184,7 +185,7 @@ positional cohort historically is.
 4. **The cohort is "players Sleeper still lists"**, not everyone who ever played.
    Attrition looks normal (7% of the 2016 cohort remains in 2025), but the long
    tail of short careers is under-represented.
-5. **`heuristic-v1` has never been validated.** Treat it as a structured way to
+5. **`heuristic-v2` has never been validated.** Treat it as a structured way to
    organise known signals, not as a calibrated probability.
 
 ## What would change the decision

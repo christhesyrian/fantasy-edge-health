@@ -46,6 +46,20 @@ export const injuryEventSchema = z.object({
   observed_at: z.string().nullable().optional(),
 });
 
+/** One distinct injury, already collapsed from its weekly reports by the engine. */
+export const injurySpellSchema = z.object({
+  body_region: z.string(),
+  first_season: z.number(),
+  last_season: z.number(),
+  first_week: z.number().nullable().optional(),
+  last_week: z.number().nullable().optional(),
+  reports: z.number(),
+  weeks_absent: z.number(),
+  worst_designation: z.string(),
+  raw_descriptors: z.array(z.string()).default([]),
+  recurrence_class: z.string(),
+});
+
 export const workloadSchema = z.object({
   season: z.number().nullable().optional(),
   games_played: z.number().nullable().optional(),
@@ -75,6 +89,7 @@ export const playerDetailSchema = playerSummarySchema.extend({
   external_ids: z.record(z.string(), z.string()).default({}),
   health: healthSchema.nullable().optional(),
   injury_history: z.array(injuryEventSchema).default([]),
+  injury_spells: z.array(injurySpellSchema).default([]),
   workload: workloadSchema.nullable().optional(),
   projected_points: z.number().nullable().optional(),
   market_adp: z.number().nullable().optional(),
@@ -292,6 +307,7 @@ export type Provenance = z.infer<typeof provenanceSchema>;
 export type ScoreComponent = z.infer<typeof scoreComponentSchema>;
 export type Health = z.infer<typeof healthSchema>;
 export type InjuryEvent = z.infer<typeof injuryEventSchema>;
+export type InjurySpell = z.infer<typeof injurySpellSchema>;
 export type Workload = z.infer<typeof workloadSchema>;
 export type PlayerSummary = z.infer<typeof playerSummarySchema>;
 export type PlayerDetail = z.infer<typeof playerDetailSchema>;

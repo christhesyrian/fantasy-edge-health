@@ -83,6 +83,27 @@ class InjuryEventOut(ApiModel):
     observed_at: datetime | None = None
 
 
+class InjurySpellOut(ApiModel):
+    """One distinct injury, reconstructed from the weekly reports that named it.
+
+    Sent alongside the raw reports rather than derived in the browser: how many
+    injuries a player has had is a domain judgement, and counting rows in
+    TypeScript is what made the drawer label a single nine-week absence as a
+    recurring problem.
+    """
+
+    body_region: str
+    first_season: int
+    last_season: int
+    first_week: int | None = None
+    last_week: int | None = None
+    reports: int
+    weeks_absent: int
+    worst_designation: str
+    raw_descriptors: list[str] = Field(default_factory=list)
+    recurrence_class: str
+
+
 # ------------------------------------------------------------------- players
 
 
@@ -178,6 +199,7 @@ class PlayerDetail(PlayerSummary):
     external_ids: dict[str, str] = Field(default_factory=dict)
     health: HealthOut | None = None
     injury_history: list[InjuryEventOut] = Field(default_factory=list)
+    injury_spells: list[InjurySpellOut] = Field(default_factory=list)
     workload: WorkloadOut | None = None
     usage: UsageOut | None = None
     playoff_schedule: PlayoffScheduleOut | None = None

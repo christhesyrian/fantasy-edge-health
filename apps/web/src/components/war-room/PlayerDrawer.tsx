@@ -7,7 +7,7 @@ import { RiskBadge } from "@/components/ui/RiskBadge";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { humanise, num, pct, signed } from "@/lib/format";
-import type { InjuryEvent, PlayerDetail } from "@/lib/types";
+import type { InjurySpell, PlayerDetail } from "@/lib/types";
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -26,8 +26,8 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
  * repeated body region, not by reading a date axis. The provider's original
  * wording sits under every normalised region, so a mapping is always auditable.
  */
-function Timeline({ events }: { events: InjuryEvent[] }) {
-  if (events.length === 0) {
+function Timeline({ spells }: { spells: InjurySpell[] }) {
+  if (spells.length === 0) {
     return (
       <p className="text-sm text-[var(--text-muted)]">
         No injury reports on file. That is an absence of evidence, not evidence of
@@ -36,44 +36,61 @@ function Timeline({ events }: { events: InjuryEvent[] }) {
     );
   }
 
-  const regionCounts = events.reduce<Record<string, number>>((counts, event) => {
-    counts[event.body_region] = (counts[event.body_region] ?? 0) + 1;
+  // One entry per injury, not per weekly report. Which injuries a player has had,
+  // and which areas keep failing, are both decided by the engine: this used to
+  // count report rows in the browser and so branded a single nine-week absence
+  // as a recurring problem seven times over.
+  const spellsByRegion = spells.reduce<Record<string, number>>((counts, spell) => {
+    counts[spell.body_region] = (counts[spell.body_region] ?? 0) + 1;
     return counts;
   }, {});
 
   return (
     <ol className="space-y-1.5">
-      {events.map((event, index) => {
-        const recurrent = (regionCounts[event.body_region] ?? 0) > 1;
+      {spells.map((spell, index) => {
+        const recurrent = (spellsByRegion[spell.body_region] ?? 0) > 1;
+        const span =
+          spell.first_week === spell.last_week || spell.last_week == null
+            ? spell.first_week
+              ? `wk${spell.first_week}`
+              : ""
+            : `wk${spell.first_week}\u2013${spell.last_week}`;
+        const seasons =
+          spell.first_season === spell.last_season
+            ? `${spell.first_season}`
+            : `${spell.first_season}\u2013${spell.last_season}`;
         return (
           <li
-            key={`${event.season}-${event.week}-${index}`}
+            key={`${spell.body_region}-${spell.first_season}-${spell.first_week}-${index}`}
             className="flex items-baseline gap-2.5 border-l-2 pl-2.5"
             style={{
               borderColor: recurrent ? "var(--color-hazard-400)" : "var(--hairline)",
             }}
           >
             <span className="tabular w-20 shrink-0 text-[0.75rem] text-[var(--text-muted)]">
-              {event.season}
-              {event.week ? ` wk${event.week}` : ""}
+              {seasons}
+              {span ? ` ${span}` : ""}
             </span>
             <span className="min-w-0 flex-1">
               <span className="text-[0.8125rem] text-[var(--text-primary)]">
-                {humanise(event.body_region)}
+                {humanise(spell.body_region)}
               </span>
               {recurrent ? (
                 <span className="ml-1.5 text-[0.65rem] tracking-wider text-[var(--color-hazard-400)] uppercase">
                   recurring
                 </span>
               ) : null}
-              {event.raw_descriptor ? (
-                <span className="block text-[0.7rem] text-[var(--text-muted)]">
-                  reported as “{event.raw_descriptor}”
-                </span>
-              ) : null}
+              <span className="block text-[0.7rem] text-[var(--text-muted)]">
+                {spell.weeks_absent > 0
+                  ? `Listed out ${spell.weeks_absent} week${spell.weeks_absent === 1 ? "" : "s"}`
+                  : "Reported, played through"}
+                {spell.raw_descriptors.length > 0
+                  ? ` \u00b7 reported as \u201c${spell.raw_descriptors.join("\u201d, \u201c")}\u201d`
+                  : ""}
+              </span>
             </span>
             <span className="display shrink-0 text-[0.65rem] text-[var(--text-secondary)]">
-              {event.designation}
+              {spell.worst_designation}
             </span>
           </li>
         );
@@ -269,7 +286,7 @@ export function PlayerDrawer({
             <section>
               <span className="rail-label">Injury timeline</span>
               <div className="mt-2">
-                <Timeline events={player.injury_history} />
+                <Timeline spells={player.injury_spells} />
               </div>
             </section>
 
