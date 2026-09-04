@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum, unique
+from typing import Final
 
 from fhe.core.health.models import (
     HealthAssessment,
@@ -38,6 +39,28 @@ class DraftPick:
     is_keeper: bool = False
     source_player_id: str | None = None
     observed_at: datetime | None = None
+
+
+# Prefix for the placeholder identity given to a pick whose player could not be
+# matched to our own player table. Losing a pick because we failed to recognise
+# a rookie would be far worse than showing an unresolved name, so the pick still
+# consumes its slot and still removes a player from the board.
+UNRESOLVED_PLAYER_PREFIX: Final = "sleeper:"
+
+
+def unresolved_player_uuid(provider_player_id: str) -> str:
+    """Placeholder identity for a player we could not resolve."""
+    return f"{UNRESOLVED_PLAYER_PREFIX}{provider_player_id}"
+
+
+def is_unresolved_player(player_uuid: str) -> bool:
+    """Whether an identity is a placeholder rather than a real player.
+
+    Callers that write to the database need this: the placeholder is not a
+    foreign key into ``players`` and must be stored as NULL, with the provider's
+    own id kept alongside it.
+    """
+    return player_uuid.startswith(UNRESOLVED_PLAYER_PREFIX)
 
 
 @unique

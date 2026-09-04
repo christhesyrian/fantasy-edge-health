@@ -170,6 +170,7 @@ async def recover_session(
             draft_id=persisted.provider_draft_id,
             user_draft_slot=persisted.user_draft_slot,
             as_of=as_of,
+            recorder=pollers.recorder if pollers else None,
         )
 
         # A finished draft is history: rebuilding it is useful for review, but

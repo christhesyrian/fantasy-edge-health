@@ -59,6 +59,7 @@ async def connect(
             league_id=body.league_id,
             draft_id=body.draft_id,
             user_id=body.user_id,
+            recorder=pollers.recorder,
         )
 
         following = False

@@ -22,6 +22,7 @@ from fhe.worker.draft_poller import (
     DraftBinding,
     DraftPoller,
     DraftSource,
+    PickRecorder,
     PollerStatus,
 )
 
@@ -53,10 +54,24 @@ class PollerManager:
         self,
         settings: Settings,
         registry: DraftSessionRegistry,
+        recorder: PickRecorder | None = None,
     ) -> None:
         self._settings = settings
         self._registry = registry
+        # Supplied here rather than at each start site so a live draft cannot
+        # be polled without its picks being written down, whether it was
+        # connected fresh or rebuilt after a restart.
+        self._recorder = recorder
         self._running: dict[str, _Supervised] = {}
+
+    @property
+    def recorder(self) -> PickRecorder | None:
+        """Where this manager's pollers write their picks.
+
+        Exposed so a connect can record the picks already made before its poller
+        starts, without every call site needing its own wiring.
+        """
+        return self._recorder
 
     @property
     def active_draft_ids(self) -> tuple[str, ...]:
@@ -103,6 +118,7 @@ class PollerManager:
             state=session.draft_state,
             sequence=self._registry.sequence,
             on_picks_applied=lambda: self._registry.publish_board_update(session),
+            recorder=self._recorder,
         )
         task = asyncio.create_task(poller.run(), name=f"draft-poller-{binding.draft_id}")
         task.add_done_callback(lambda _: self._running.pop(binding.draft_id, None))
@@ -122,8 +138,8 @@ class PollerManager:
             await asyncio.wait_for(asyncio.shield(supervised.task), timeout=10)
         except TimeoutError:
             # The loop is wedged somewhere it should not be. Cancelling is
-            # correct: draft state is already persisted in the session, so
-            # nothing is lost by killing the task.
+            # correct: every applied pick is already in the session and written
+            # to draft_picks, so nothing is lost by killing the task.
             log.warning("poller_stop_timed_out", draft_id=draft_id)
             supervised.task.cancel()
         self._running.pop(draft_id, None)

@@ -30,7 +30,7 @@ from fhe.db.base import utcnow
 from fhe.db.models.draft import Draft, FantasyLeague
 from fhe.db.upsert import upsert_rows
 from fhe.observability import get_logger
-from fhe.worker.draft_poller import DraftBinding, to_domain_pick
+from fhe.worker.draft_poller import DraftBinding, PickRecorder, to_domain_pick
 
 log = get_logger(__name__)
 
@@ -315,8 +315,14 @@ async def connect_sleeper_draft(
     user_id: str | None = None,
     user_draft_slot: int | None = None,
     as_of: date | None = None,
+    recorder: PickRecorder | None = None,
 ) -> tuple[ConnectedDraft, DraftBinding, DraftSession]:
     """Connect a Sleeper draft and return a session ready to be polled.
+
+    ``recorder`` stores the picks that had already been made when we connected.
+    The poller records only what it newly applies, and those earlier picks are
+    duplicates by the time it first polls, so without this a draft joined in the
+    fourth round would keep no record of the first three.
 
     ``user_draft_slot`` overrides the seat that would be resolved from
     ``user_id``. Recovery after a restart passes the slot it already recorded,
@@ -386,7 +392,10 @@ async def connect_sleeper_draft(
     state = DraftState(settings, draft_id=draft.draft_id)
     existing = await sleeper.get_draft_picks(draft.draft_id)
     observed = utcnow()
-    state.apply_picks([to_domain_pick(pick, binding, observed_at=observed) for pick in existing])
+    seeded = [to_domain_pick(pick, binding, observed_at=observed) for pick in existing]
+    state.apply_picks(seeded)
+    if recorder is not None and seeded:
+        await recorder.record(draft.draft_id, seeded)
 
     session_record = registry.register_live(
         session_id=draft.draft_id,

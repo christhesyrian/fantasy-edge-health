@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import random
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum, unique
@@ -37,7 +37,7 @@ from typing import Final, Protocol
 
 from fhe.api.events import DraftEvent, EventBus, EventType, SequenceCounter
 from fhe.config import Settings
-from fhe.core.draft.models import DraftPick, PickOutcome
+from fhe.core.draft.models import DraftPick, PickOutcome, unresolved_player_uuid
 from fhe.core.draft.state import DraftState
 from fhe.core.league import LeagueSettings
 from fhe.data.providers.base import ProviderError
@@ -56,6 +56,19 @@ FAILURES_BEFORE_STALE: Final = 2
 # Give up on a draft that has failed this many times in a row; something is
 # wrong that retrying will not fix.
 MAX_CONSECUTIVE_FAILURES: Final = 40
+
+
+class PickRecorder(Protocol):
+    """Durable storage for picks the poller has applied.
+
+    One method, because that is all the poller needs. The implementation lives
+    in the API layer, which owns database access; the poller only knows that
+    somewhere a pick can be written down.
+    """
+
+    async def record(self, draft_id: str, picks: Sequence[DraftPick]) -> int:
+        """Store the picks. Must not raise: a draft outranks its own record."""
+        ...
 
 
 class DraftSource(Protocol):
@@ -134,7 +147,9 @@ def to_domain_pick(pick: SleeperPick, binding: DraftBinding, *, observed_at: dat
     losing a pick because we failed to recognise a rookie would be far worse
     than showing an unresolved name.
     """
-    player_uuid = binding.player_id_map.get(pick.player_id, f"sleeper:{pick.player_id}")
+    player_uuid = binding.player_id_map.get(
+        pick.player_id, unresolved_player_uuid(pick.player_id)
+    )
     return DraftPick(
         pick_no=pick.pick_no,
         round_number=pick.round_number,
@@ -162,6 +177,9 @@ class DraftPoller:
         on_picks_applied: Awaited after a cycle that applied at least one pick.
             The poller owns draft state but not the board, so recomputation is
             delegated rather than duplicated here.
+        recorder: Where applied picks are written down. Optional because a
+            simulated draft has nothing worth persisting, and because the poller
+            must remain runnable in a test without a database.
     """
 
     def __init__(
@@ -175,6 +193,7 @@ class DraftPoller:
         sequence: SequenceCounter | None = None,
         rng: random.Random | None = None,
         on_picks_applied: Callable[[], Awaitable[None]] | None = None,
+        recorder: PickRecorder | None = None,
     ) -> None:
         self._settings = settings
         self._provider = provider
@@ -185,6 +204,7 @@ class DraftPoller:
         self._rng = rng or random.Random()  # noqa: S311 - backoff jitter, not crypto
         self._status = PollerStatus(draft_id=binding.draft_id)
         self._on_picks_applied = on_picks_applied
+        self._recorder = recorder
         self._stop = asyncio.Event()
 
     @property
@@ -261,6 +281,24 @@ class DraftPoller:
             await self._publish(EventType.CONNECTION_STATUS, {"status": "LIVE", "recovered": True})
 
         applied = self._apply(picks, observed_at=observed_at)
+
+        if applied and self._recorder is not None:
+            # Before the events go out, so a pick the browser has been told
+            # about is a pick that has been written down.
+            try:
+                await self._recorder.record(self._binding.draft_id, applied)
+            except Exception as error:  # noqa: BLE001 - the board outranks its record
+                # The recorder promises not to raise. This does not take that on
+                # trust, because the cost of being wrong is a database problem
+                # counting as a *provider* failure: the poller would back off and
+                # mark the feed stale, and the room would stop seeing picks that
+                # Sleeper was serving perfectly well.
+                log.warning(
+                    "pick_recorder_raised",
+                    draft_id=self._binding.draft_id,
+                    picks=len(applied),
+                    error=str(error),
+                )
 
         for pick in applied:
             await self._publish(

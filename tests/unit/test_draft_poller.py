@@ -106,6 +106,22 @@ def binding(league: LeagueSettings) -> DraftBinding:
     )
 
 
+class RecordingRecorder:
+    """A PickRecorder that remembers what it was asked to store."""
+
+    def __init__(self, *, fails: bool = False) -> None:
+        self.recorded: list[tuple[str, tuple[int, ...]]] = []
+        self._fails = fails
+
+    async def record(self, draft_id: str, picks: Any) -> int:
+        self.recorded.append((draft_id, tuple(p.pick_no for p in picks)))
+        if self._fails:
+            # The real recorder swallows its own database failures. This proves
+            # the poller does not depend on that promise being kept.
+            raise RuntimeError("recorder exploded")
+        return len(picks)
+
+
 async def run_poller(
     settings: Settings,
     binding: DraftBinding,
@@ -327,3 +343,67 @@ class TestTranslation:
 
         assert pick.draft_slot == 4
         assert pick.roster_id == provider_pick.roster_id
+
+
+class TestRecording:
+    async def test_applied_picks_are_handed_to_the_recorder(
+        self, settings: Settings, binding: DraftBinding
+    ) -> None:
+        recorder = RecordingRecorder()
+        provider = ScriptedProvider(
+            [[sleeper_pick(1, "sp1")], [sleeper_pick(1, "sp1"), sleeper_pick(2, "sp2")]]
+        )
+        poller = DraftPoller(
+            settings, provider, InProcessEventBus(), binding, recorder=recorder
+        )
+
+        await poller._poll_once()
+        await poller._poll_once()
+
+        # Only what was newly applied: the provider re-sends pick 1 every cycle,
+        # and re-recording the whole draft on a two-second timer would be a
+        # write storm for no benefit.
+        assert recorder.recorded == [(DRAFT_ID, (1,)), (DRAFT_ID, (2,))]
+
+    async def test_a_cycle_with_no_new_picks_records_nothing(
+        self, settings: Settings, binding: DraftBinding
+    ) -> None:
+        recorder = RecordingRecorder()
+        provider = ScriptedProvider([[sleeper_pick(1, "sp1")], [sleeper_pick(1, "sp1")]])
+        poller = DraftPoller(
+            settings, provider, InProcessEventBus(), binding, recorder=recorder
+        )
+
+        await poller._poll_once()
+        await poller._poll_once()
+
+        assert recorder.recorded == [(DRAFT_ID, (1,))]
+
+    async def test_a_poller_with_no_recorder_still_polls(
+        self, settings: Settings, binding: DraftBinding
+    ) -> None:
+        """A simulated draft has nothing worth persisting."""
+        provider = ScriptedProvider([[sleeper_pick(1, "sp1")]])
+        poller, events = await run_poller(settings, binding, provider, cycles=1)
+
+        assert poller.state.pick_count == 1
+        assert any(e.type is EventType.PICK_MADE for e in events)
+
+    async def test_a_recorder_that_raises_does_not_take_the_draft_down(
+        self, settings: Settings, binding: DraftBinding
+    ) -> None:
+        """Belt and braces over the recorder's own promise not to raise.
+
+        The board is what the room is watching. Nothing about writing history
+        down is worth failing a poll cycle for, so the poller is tested against
+        a recorder that breaks its contract.
+        """
+        recorder = RecordingRecorder(fails=True)
+        provider = ScriptedProvider([[sleeper_pick(1, "sp1")]])
+        poller = DraftPoller(
+            settings, provider, InProcessEventBus(), binding, recorder=recorder
+        )
+
+        await poller._poll_once()
+
+        assert poller.state.pick_count == 1

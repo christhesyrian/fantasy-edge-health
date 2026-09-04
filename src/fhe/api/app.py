@@ -28,6 +28,7 @@ from fhe.api.routers import (
     sleeper,
 )
 from fhe.api.services.draft_session import DraftSessionRegistry
+from fhe.api.services.pick_recorder import DatabasePickRecorder
 from fhe.api.services.poller_manager import PollerManager
 from fhe.config import Settings, get_settings
 from fhe.core.simulation import generate_player_pool
@@ -76,7 +77,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.event_bus = event_bus
     registry = DraftSessionRegistry(event_bus)
     app.state.registry = registry
-    app.state.poller_manager = PollerManager(settings, registry)
+    app.state.poller_manager = PollerManager(
+        settings, registry, DatabasePickRecorder(app.state.session_factory)
+    )
 
     # Generated once at startup: it is deterministic, costs a moment, and makes
     # demo mode instant on first request.
