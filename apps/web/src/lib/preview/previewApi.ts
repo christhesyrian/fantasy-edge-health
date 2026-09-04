@@ -25,6 +25,7 @@ import {
   type DraftState,
   type HealthStatus,
   type PlayerDetail,
+  type SessionStatus,
   type SimulationState,
 } from "@/lib/types";
 
@@ -110,6 +111,24 @@ function unavailable(): never {
 }
 
 export const previewApi = {
+  // Preview has no backend and therefore nothing to protect. Reporting no gate
+  // is the truth about this environment, not a bypass of a real one: the flag
+  // is a build-time constant and a normal build never reaches this code.
+  sessionStatus: async (): Promise<SessionStatus> => ({
+    required: false,
+    authenticated: true,
+  }),
+
+  signIn: async (): Promise<SessionStatus> => ({
+    required: false,
+    authenticated: true,
+  }),
+
+  signOut: async (): Promise<SessionStatus> => ({
+    required: false,
+    authenticated: true,
+  }),
+
   health: async (): Promise<HealthStatus> => ({
     status: "ok",
     version: (await load()).engine_version,

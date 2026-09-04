@@ -16,8 +16,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fhe import __version__
 from fhe.api.errors import register_error_handlers
 from fhe.api.events import create_event_bus
-from fhe.api.middleware import RequestContextMiddleware
+from fhe.api.middleware import AccessGateMiddleware, RequestContextMiddleware
 from fhe.api.routers import (
+    auth,
     diagnostics,
     drafts,
     health,
@@ -27,6 +28,7 @@ from fhe.api.routers import (
     simulations,
     sleeper,
 )
+from fhe.api.services.access import AttemptLimiter
 from fhe.api.services.draft_session import DraftSessionRegistry
 from fhe.api.services.pick_recorder import DatabasePickRecorder
 from fhe.api.services.poller_manager import PollerManager
@@ -111,6 +113,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """
     resolved = settings or get_settings()
 
+    # Checked here rather than in the lifespan so the process dies on startup
+    # instead of after a platform has reported a successful deploy. An open
+    # production instance fails silently in every other respect: everything
+    # works, which is precisely the problem.
+    misconfiguration = resolved.access_configuration_error
+    if misconfiguration is not None:
+        raise RuntimeError(misconfiguration)
+
     app = FastAPI(
         title="Fantasy Health Edge API",
         version=__version__,
@@ -121,7 +131,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/openapi.json",
     )
     app.state.settings = resolved
+    app.state.attempt_limiter = AttemptLimiter(
+        max_attempts=resolved.access_max_attempts,
+        lockout_seconds=resolved.access_lockout_minutes * 60,
+    )
 
+    # Starlette runs middleware in reverse registration order, so the gate is
+    # added first to run *inside* the request-context middleware. A refused
+    # request still gets a correlation id and an access log line, which is what
+    # makes "nobody can sign in" diagnosable.
+    app.add_middleware(AccessGateMiddleware, settings=resolved)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         CORSMiddleware,
@@ -138,6 +157,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_error_handlers(app)
 
     app.include_router(health.router, prefix=API_PREFIX)
+    app.include_router(auth.router, prefix=API_PREFIX)
     app.include_router(drafts.router, prefix=API_PREFIX)
     app.include_router(simulations.router, prefix=API_PREFIX)
     app.include_router(leagues.router, prefix=API_PREFIX)

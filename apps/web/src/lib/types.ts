@@ -46,6 +46,17 @@ export const injuryEventSchema = z.object({
   observed_at: z.string().nullable().optional(),
 });
 
+/**
+ * Whether this instance is password protected, and whether we are past it.
+ *
+ * `required` is what lets the app choose between a password form and the board
+ * without provoking a failed request to find out.
+ */
+export const sessionStatusSchema = z.object({
+  required: z.boolean(),
+  authenticated: z.boolean(),
+});
+
 /** Where a player is listed on his team's depth chart, as the engine read it. */
 export const depthChartSchema = z.object({
   team: z.string(),
@@ -320,6 +331,7 @@ export type Health = z.infer<typeof healthSchema>;
 export type InjuryEvent = z.infer<typeof injuryEventSchema>;
 export type InjurySpell = z.infer<typeof injurySpellSchema>;
 export type DepthChart = z.infer<typeof depthChartSchema>;
+export type SessionStatus = z.infer<typeof sessionStatusSchema>;
 export type Workload = z.infer<typeof workloadSchema>;
 export type PlayerSummary = z.infer<typeof playerSummarySchema>;
 export type PlayerDetail = z.infer<typeof playerDetailSchema>;

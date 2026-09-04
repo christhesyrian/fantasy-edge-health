@@ -15,6 +15,7 @@ import {
   draftStateSchema,
   healthStatusSchema,
   nflStateSchema,
+  sessionStatusSchema,
   playerDetailSchema,
   simulationStateSchema,
   sleeperDraftSchema,
@@ -47,6 +48,10 @@ async function request<T>(
 ): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
+    // The session cookie is set by an API on a different origin, so it travels
+    // only when the request asks for it. Without this the gate would refuse
+    // every call from a deployed frontend while working perfectly on localhost.
+    credentials: "include",
     headers: {
       ...(init?.body instanceof FormData ? {} : { "content-type": "application/json" }),
       ...init?.headers,
@@ -84,6 +89,19 @@ export interface SimulationOptions {
 
 const liveApi = {
   health: () => request("/api/v1/health", healthStatusSchema),
+
+  // ---- access gate --------------------------------------------------------
+
+  sessionStatus: () => request("/api/v1/auth/session", sessionStatusSchema),
+
+  signIn: (password: string) =>
+    request("/api/v1/auth/session", sessionStatusSchema, {
+      method: "POST",
+      body: JSON.stringify({ password }),
+    }),
+
+  signOut: () =>
+    request("/api/v1/auth/session", sessionStatusSchema, { method: "DELETE" }),
 
   createSimulation: (options: SimulationOptions) =>
     request("/api/v1/simulations", simulationStateSchema, {

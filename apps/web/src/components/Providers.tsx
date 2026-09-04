@@ -3,6 +3,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { AccessGate } from "./AccessGate";
+
 /**
  * Query client.
  *
@@ -25,5 +27,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
       }),
   );
 
-  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  // The gate lives inside the query client because it is itself a query, and
+  // outside everything else because nothing should render behind it.
+  return (
+    <QueryClientProvider client={client}>
+      <AccessGate>{children}</AccessGate>
+    </QueryClientProvider>
+  );
 }

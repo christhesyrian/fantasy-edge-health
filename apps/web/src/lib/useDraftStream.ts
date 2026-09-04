@@ -116,7 +116,10 @@ export function useDraftStream(
     const connect = () => {
       if (disposed) return;
 
-      source = new EventSource(url);
+      // The stream is on another origin and the gate is cookie-based, because
+      // EventSource cannot set headers. Without withCredentials the browser
+      // omits the cookie and every reconnect is refused.
+      source = new EventSource(url, { withCredentials: true });
 
       source.onopen = () => {
         if (disposed) return;

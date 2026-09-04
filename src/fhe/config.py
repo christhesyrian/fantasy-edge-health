@@ -60,6 +60,25 @@ class Settings(BaseSettings):
     api_port: int = 8000
     cors_origins: str = "http://localhost:3000"
 
+    # ---- access gate -------------------------------------------------------
+    # One shared password in front of the whole API. Deliberately not accounts:
+    # this exists so a handful of named friends can use a deployed instance,
+    # and a login system nobody asked for would be more code to get wrong.
+    #
+    # `repr=False` keeps it out of tracebacks and logged settings dumps. Empty
+    # disables the gate, which is right for local development and is refused
+    # outright in production - see `access_configuration_error`.
+    access_password: str = Field(default="", repr=False)
+    # How long a session cookie stays valid. Long enough that a draft never ends
+    # with a surprise login screen, short enough that a borrowed laptop is not
+    # authorised forever.
+    access_session_hours: float = 72.0
+    # Failed attempts allowed per client address before that address is refused
+    # for a while. A shared password is guessable by anyone patient, and this
+    # is what makes patience expensive.
+    access_max_attempts: int = 10
+    access_lockout_minutes: float = 15.0
+
     # ---- sleeper -----------------------------------------------------------
     # Verified against https://docs.sleeper.com on 2026-08-22. No auth required.
     sleeper_base_url: str = "https://api.sleeper.app/v1"
@@ -121,6 +140,29 @@ class Settings(BaseSettings):
         return level
 
     @property
+    def access_enabled(self) -> bool:
+        """Whether a shared password is configured."""
+        return bool(self.access_password.strip())
+
+    @property
+    def access_configuration_error(self) -> str | None:
+        """Why this configuration must not start, if it must not.
+
+        A production deployment with no password is an open database on the
+        public internet, and the failure is silent: everything works, which is
+        exactly the problem. Refusing to start is the only signal that cannot be
+        missed, and the fix is one environment variable.
+        """
+        if self.is_production and not self.access_enabled:
+            return (
+                "PRODUCTION environment with no FHE_ACCESS_PASSWORD set. Every "
+                "draft, import, and player record would be readable and writable "
+                "by anyone with the URL. Set FHE_ACCESS_PASSWORD, or set FHE_ENV "
+                "to development if this instance is deliberately open."
+            )
+        return None
+
+    @property
     def is_production(self) -> bool:
         """Whether production defaults should apply."""
         return self.env is Environment.PRODUCTION
@@ -169,6 +211,11 @@ class Settings(BaseSettings):
             warnings.append(
                 "No FHE_REDIS_URL set: using an in-process event bus. Live draft "
                 "updates will not propagate across multiple workers."
+            )
+        if not self.access_enabled:
+            warnings.append(
+                "No FHE_ACCESS_PASSWORD set: the API is unauthenticated. Anyone "
+                "who can reach it can read and change every draft."
             )
         if self.is_production and self.uses_sqlite:
             warnings.append(
