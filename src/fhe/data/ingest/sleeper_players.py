@@ -31,6 +31,7 @@ Three safety properties matter here:
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Protocol
@@ -195,10 +196,21 @@ def _display_name(raw: dict[str, Any]) -> str:
 
 
 def _player_row(
-    raw: dict[str, Any], identity: ResolvedIdentity, name: str, position: Position
+    raw: dict[str, Any],
+    identity: ResolvedIdentity,
+    name: str,
+    position: Position,
+    nflverse_row: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Build the ``players`` row for a resolved player."""
+    """Build the ``players`` row for a resolved player.
+
+    Draft and debut facts come from nflverse rather than Sleeper, which does not
+    publish them. They are what let a rookie-opportunity model ask "was this
+    player a rookie in 2023" — a question `years_experience` cannot answer,
+    being a count as of today.
+    """
     now = utcnow()
+    nfl = nflverse_row or {}
     return {
         "player_uuid": identity.player_uuid,
         "full_name": name,
@@ -212,6 +224,10 @@ def _player_row(
         # Bounds reject the impossible ages that appear in provider feeds.
         "age": _parse_float(raw.get("age"), low=17.0, high=50.0),
         "years_experience": _parse_int(raw.get("years_exp"), low=0, high=30),
+        "rookie_season": _parse_int(nfl.get("rookie_season"), low=1920, high=2100),
+        "draft_year": _parse_int(nfl.get("draft_year"), low=1920, high=2100),
+        "draft_round": _parse_int(nfl.get("draft_round"), low=1, high=12),
+        "draft_pick": _parse_int(nfl.get("draft_pick"), low=1, high=300),
         "height_inches": _parse_height_inches(raw.get("height")),
         "weight_pounds": _parse_int(raw.get("weight"), low=120, high=400),
         "college": clean_token(raw.get("college")),
@@ -380,7 +396,15 @@ async def sync_sleeper_players(
                 continue
             seen_uuids.add(outcome.player_uuid)
 
-            player_rows.append(_player_row(raw, outcome, name, position))
+            # The nflverse row keyed by the gsis this identity resolved to, so
+            # draft and debut facts come from the source that publishes them.
+            gsis = outcome.external_ids.get("gsis_id")
+            nflverse_row = (
+                nflverse_index.by_gsis.get(gsis)
+                if nflverse_index is not None and gsis is not None
+                else None
+            )
+            player_rows.append(_player_row(raw, outcome, name, position, nflverse_row))
 
             for system, value in outcome.external_ids.items():
                 id_claims.setdefault((system, value), []).append(

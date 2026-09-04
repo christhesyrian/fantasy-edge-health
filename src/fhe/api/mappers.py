@@ -19,6 +19,7 @@ from fhe.api.schemas import (
     PositionScarcityOut,
     RecommendationOut,
     RiskComponentOut,
+    RookieOpportunityOut,
     RosterSlotOut,
     ScoreComponentOut,
     TeamRosterOut,
@@ -76,6 +77,7 @@ def player_detail(player: DraftablePlayer, *, is_demo: bool) -> PlayerDetail:
     workload = player.workload
     usage = player.usage
     playoff = player.playoff_schedule
+    landing = player.rookie_opportunity
     return PlayerDetail(
         player_uuid=player.player_uuid,
         name=player.name,
@@ -100,6 +102,21 @@ def player_detail(player: DraftablePlayer, *, is_demo: bool) -> PlayerDetail:
                 reverse=True,
             )
         ],
+        is_rookie=player.is_rookie,
+        rookie_opportunity=(
+            RookieOpportunityOut(
+                team=landing.team,
+                coach=landing.coach,
+                seasons_under_coach=landing.seasons_under_coach,
+                average_rookie_touches=landing.average_rookie_touches,
+                rank=landing.rank,
+                teams_ranked=landing.teams_ranked,
+                had_recent_workhorse=landing.had_recent_workhorse,
+                boost=landing.boost,
+            )
+            if landing
+            else None
+        ),
         playoff_schedule=(
             PlayoffScheduleOut(
                 weeks_covered=playoff.weeks_covered,

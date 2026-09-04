@@ -139,6 +139,14 @@ one file covering every year, and the upcoming season appears in it as soon as
 the league publishes fixtures — with scores still null, which is exactly the
 state a draft needs.
 
+Two columns in this asset carry more than the schedule. `home_coach` and
+`away_coach` are populated for every game in both the last played season and
+the upcoming one, which is what makes "seasons under the *current* coach"
+answerable rather than assumed — the tenure boundary the rookie model depends
+on. `rookie_season`, `draft_year`, `draft_round` and `draft_pick` come from the
+`players` asset for the same reason: `years_experience` is a count as of today
+and cannot say who was a rookie in 2023.
+
 **The other half needs no provider at all.** Defensive strength is measured from
 this system's own `player_weekly_stats`, because every stat line records the
 opponent it was produced against. "Points allowed to running backs" is therefore

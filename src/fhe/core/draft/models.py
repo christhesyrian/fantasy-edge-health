@@ -11,6 +11,7 @@ from fhe.core.health.models import (
     InjuryHistoryEvent,
     WorkloadSummary,
 )
+from fhe.core.rookies import RookieOpportunity
 from fhe.core.schedule import PlayoffSchedule
 from fhe.core.types import Position
 from fhe.core.usage import UsageProfile
@@ -106,6 +107,8 @@ class DraftablePlayer:
     workload: WorkloadSummary | None = None
     usage: UsageProfile | None = None
     playoff_schedule: PlayoffSchedule | None = None
+    is_rookie: bool = False
+    rookie_opportunity: RookieOpportunity | None = None
     bye_week: int | None = None
     age: float | None = None
     years_experience: int | None = None

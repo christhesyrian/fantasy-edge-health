@@ -153,6 +153,19 @@ class PlayoffScheduleOut(ApiModel):
     )
 
 
+class RookieOpportunityOut(ApiModel):
+    """How willing a rookie's team has been to play rookies, under this coach."""
+
+    team: str
+    coach: str | None = None
+    seasons_under_coach: int = 0
+    average_rookie_touches: float | None = None
+    rank: int | None = None
+    teams_ranked: int = 0
+    had_recent_workhorse: bool = False
+    boost: float = 0.0
+
+
 class PlayerDetail(PlayerSummary):
     """Full player record for the detail drawer."""
 
@@ -168,6 +181,8 @@ class PlayerDetail(PlayerSummary):
     workload: WorkloadOut | None = None
     usage: UsageOut | None = None
     playoff_schedule: PlayoffScheduleOut | None = None
+    is_rookie: bool = False
+    rookie_opportunity: RookieOpportunityOut | None = None
     projected_points: float | None = None
     market_adp: float | None = None
     adp_stdev: float | None = None

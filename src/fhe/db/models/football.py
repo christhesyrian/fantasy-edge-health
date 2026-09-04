@@ -134,6 +134,11 @@ class ScheduledGame(Base, TimestampMixin, ProvenanceMixin):
     away_team: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
     home_score: Mapped[int | None] = mapped_column(Integer)
     away_score: Mapped[int | None] = mapped_column(Integer)
+    # Named for every game in both the last played season and the upcoming one,
+    # which is what makes "seasons under the current coach" answerable rather
+    # than assumed.
+    home_coach: Mapped[str | None] = mapped_column(String(64))
+    away_coach: Mapped[str | None] = mapped_column(String(64))
 
     __table_args__ = (
         UniqueConstraint("provider_game_id", "source", name="uq_scheduled_game_per_provider"),

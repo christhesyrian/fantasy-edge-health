@@ -44,6 +44,13 @@ class Player(Base, TimestampMixin, ProvenanceMixin):
     birth_date: Mapped[date | None] = mapped_column(Date)
     age: Mapped[float | None] = mapped_column(Float)
     years_experience: Mapped[int | None] = mapped_column(Integer)
+    # The season a player debuted. Distinct from years_experience, which is a
+    # *current* count and cannot say whether someone was a rookie in 2023 —
+    # which is the question a rookie-opportunity model asks of every past year.
+    rookie_season: Mapped[int | None] = mapped_column(Integer, index=True)
+    draft_year: Mapped[int | None] = mapped_column(Integer)
+    draft_round: Mapped[int | None] = mapped_column(Integer)
+    draft_pick: Mapped[int | None] = mapped_column(Integer)
     height_inches: Mapped[int | None] = mapped_column(Integer)
     weight_pounds: Mapped[int | None] = mapped_column(Integer)
     college: Mapped[str | None] = mapped_column(String(96))

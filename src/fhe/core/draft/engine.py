@@ -182,6 +182,16 @@ class DraftContext:
     user_picks_remaining: int | None = None
 
 
+def _ordinal(value: int | None) -> str:
+    """1 -> "1st". Used only in explanation text."""
+    if value is None:
+        return "unranked"
+    # The teens all take "th"; everything else goes by its last digit.
+    teens = 10 <= value % 100 <= 20
+    suffix = "th" if teens else {1: "st", 2: "nd", 3: "rd"}.get(value % 10, "th")
+    return f"{value}{suffix}"
+
+
 def _clamp01(value: float) -> float:
     """Constrain to ``[0, 1]``."""
     return max(0.0, min(1.0, value))
@@ -327,6 +337,41 @@ def _score_player(
                         "his role nor his production has shown."
                         if share is not None
                         else "Measured opportunity does not yet support this projection."
+                    ),
+                )
+            )
+
+    # --- rookie landing spot ------------------------------------------------
+    #
+    # Only for rookies, and only ever upward. Every other signal this engine
+    # trusts is blank for them — no measured usage, no injury history, a
+    # projection built on college tape — so this is close to the only evidence
+    # available about a first-year player. It describes the *situation*, not the
+    # player: how willing this coaching staff has been to give rookies the ball.
+    #
+    # A staff with no history produces nothing rather than a penalty. A coach
+    # who has not yet coached the team is an unknown, and inventing a verdict
+    # about him would be exactly the failure this product is built to avoid.
+    landing = player.rookie_opportunity
+    if player.is_rookie and landing is not None:
+        boost = landing.boost
+        if boost > 0:
+            precedent = (
+                " and gave a rookie a full workload last season"
+                if landing.had_recent_workhorse
+                else ""
+            )
+            components.append(
+                ScoreComponent(
+                    name="rookie_landing_spot",
+                    label="Landing spot",
+                    points=round(boost, 2),
+                    detail=(
+                        f"{landing.coach}'s offence has given rookies "
+                        f"{landing.average_rookie_touches:.0f} touches a season across "
+                        f"{landing.seasons_under_coach} year(s) in charge, "
+                        f"{_ordinal(landing.rank)} of {landing.teams_ranked} "
+                        f"ranked teams{precedent}."
                     ),
                 )
             )

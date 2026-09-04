@@ -79,6 +79,8 @@ def _row(record: dict[str, Any], now: Any) -> dict[str, Any] | None:
         "away_team": away.upper(),
         "home_score": _int_or_none(record.get("home_score")),
         "away_score": _int_or_none(record.get("away_score")),
+        "home_coach": clean_token(record.get("home_coach")) or None,
+        "away_coach": clean_token(record.get("away_coach")) or None,
         "source": PROVIDER_NAME,
         "ingested_at": now,
         # The fact this row describes is the game, so the date it is scheduled

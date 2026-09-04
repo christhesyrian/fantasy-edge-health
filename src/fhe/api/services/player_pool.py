@@ -35,6 +35,7 @@ from fhe.core.health import (
     score_health,
 )
 from fhe.core.injury import normalize_practice_status
+from fhe.core.rookies import MEANINGFUL_ROOKIE_TOUCHES, RookieOpportunity
 from fhe.core.schedule import PLAYOFF_WEEKS, PlayoffSchedule
 from fhe.core.types import (
     BodyRegion,
@@ -69,6 +70,11 @@ HISTORY_SEASONS = 3
 # would inflate per-game usage for the minority of players whose team went deep,
 # which is a property of their team rather than their exposure.
 REGULAR_SEASON = "REG"
+
+# Positions whose rookie touches describe an offensive role worth measuring.
+ROOKIE_TOUCH_POSITIONS: frozenset[Position] = frozenset(
+    {Position.QB, Position.RB, Position.WR, Position.TE}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +239,7 @@ async def load_player_pool(
     # Same season as workload: the most recent one actually played.
     usage = await _usage(session, uuids, season - 1, scoring_format)
     playoff = await _playoff_schedule(session, season, scoring_format)
+    rookie_landing = await _rookie_opportunity(session, season)
 
     pool: list[DraftablePlayer] = []
     for player in player_rows:
@@ -283,6 +290,12 @@ async def load_player_pool(
                 injury_history=events,
                 workload=workloads.get(uuid),
                 usage=usage.get(uuid),
+                is_rookie=player.rookie_season == season,
+                rookie_opportunity=(
+                    rookie_landing.get(player.team.upper())
+                    if player.team and player.rookie_season == season
+                    else None
+                ),
                 playoff_schedule=(
                     playoff.get(f"{player.team.upper()}:{position.value}") if player.team else None
                 ),
@@ -384,6 +397,114 @@ _POINTS_COLUMN = {
     ScoringFormat.HALF_PPR: PlayerWeeklyStat.fantasy_points_half_ppr,
     ScoringFormat.STANDARD: PlayerWeeklyStat.fantasy_points_standard,
 }
+
+
+async def _rookie_opportunity(session: AsyncSession, season: int) -> dict[str, RookieOpportunity]:
+    """How willing each team has been to play rookies, under its current coach.
+
+    Tenure is the load-bearing part. Coaching staffs differ persistently in
+    whether they play rookies, and that travels with the staff rather than the
+    franchise, so a season under a previous coach says nothing about the
+    current one. Only the *contiguous* run ending at the upcoming season counts
+    — a coach who had an earlier interim spell at the same club was working in
+    a different situation, and splicing the two would read as continuity that
+    never existed.
+    """
+    game_rows = (
+        await session.execute(
+            select(
+                ScheduledGame.season,
+                ScheduledGame.home_team,
+                ScheduledGame.home_coach,
+                ScheduledGame.away_team,
+                ScheduledGame.away_coach,
+            ).where(ScheduledGame.game_type == "REG")
+        )
+    ).all()
+    if not game_rows:
+        return {}
+
+    # The coach who took most of a team's games in a season is that season's
+    # coach; a mid-season replacement should not make the year ambiguous.
+    games_by: dict[tuple[int, str, str], int] = defaultdict(int)
+    for row in game_rows:
+        if row.home_coach:
+            games_by[(int(row.season), str(row.home_team).upper(), str(row.home_coach))] += 1
+        if row.away_coach:
+            games_by[(int(row.season), str(row.away_team).upper(), str(row.away_coach))] += 1
+
+    coach_of: dict[tuple[int, str], str] = {}
+    best: dict[tuple[int, str], int] = {}
+    for (year, team, coach), count in games_by.items():
+        if count > best.get((year, team), 0):
+            best[(year, team)] = count
+            coach_of[(year, team)] = coach
+
+    teams = {team for (_, team) in coach_of}
+    tenure: dict[str, tuple[str, list[int]]] = {}
+    for team in teams:
+        current = coach_of.get((season, team))
+        if current is None:
+            continue
+        years: list[int] = []
+        year = season - 1
+        while coach_of.get((year, team)) == current:
+            years.append(year)
+            year -= 1
+        tenure[team] = (current, sorted(years))
+
+    # Offensive touches taken by rookies, per team and season.
+    touch_rows = (
+        await session.execute(
+            select(
+                PlayerWeeklyStat.season,
+                PlayerWeeklyStat.team,
+                PlayerWeeklyStat.player_uuid,
+                func.sum(PlayerWeeklyStat.carries + PlayerWeeklyStat.receptions).label("touches"),
+            )
+            .join(Player, Player.player_uuid == PlayerWeeklyStat.player_uuid)
+            .where(
+                PlayerWeeklyStat.season_type == REGULAR_SEASON,
+                Player.rookie_season.isnot(None),
+                Player.rookie_season == PlayerWeeklyStat.season,
+                Player.position.in_([p.value for p in ROOKIE_TOUCH_POSITIONS]),
+            )
+            .group_by(PlayerWeeklyStat.season, PlayerWeeklyStat.team, PlayerWeeklyStat.player_uuid)
+        )
+    ).all()
+
+    team_season_touches: dict[tuple[int, str], float] = defaultdict(float)
+    workhorse: set[tuple[int, str]] = set()
+    for touch_row in touch_rows:
+        if touch_row.touches is None or not touch_row.team:
+            continue
+        key = (int(touch_row.season), str(touch_row.team).upper())
+        team_season_touches[key] += float(touch_row.touches)
+        if float(touch_row.touches) >= MEANINGFUL_ROOKIE_TOUCHES:
+            workhorse.add(key)
+
+    averages: dict[str, float] = {}
+    for team, (_, years) in tenure.items():
+        if not years:
+            continue
+        averages[team] = sum(team_season_touches.get((y, team), 0.0) for y in years) / len(years)
+
+    order = sorted(averages, key=lambda t: -averages[t])
+    rank_of = {team: index + 1 for index, team in enumerate(order)}
+
+    opportunities: dict[str, RookieOpportunity] = {}
+    for team, (coach, years) in tenure.items():
+        latest = max(years) if years else None
+        opportunities[team] = RookieOpportunity(
+            team=team,
+            coach=coach,
+            seasons_under_coach=len(years),
+            average_rookie_touches=(round(averages[team], 1) if team in averages else None),
+            rank=rank_of.get(team),
+            teams_ranked=len(order),
+            had_recent_workhorse=latest is not None and (latest, team) in workhorse,
+        )
+    return opportunities
 
 
 async def _playoff_schedule(
