@@ -168,6 +168,27 @@ class RateLimiter:
             await asyncio.sleep(wait)
 
 
+# One limiter per rate, shared by every provider in the process. Keyed on the
+# rate rather than global so a test can ask for an isolated budget by asking for
+# an unusual one, and so two providers with genuinely different ceilings do not
+# share a bucket.
+_SHARED_LIMITERS: dict[int, RateLimiter] = {}
+
+
+def shared_rate_limiter(max_per_minute: int) -> RateLimiter:
+    """The process-wide limiter for a given rate.
+
+    A provider's rate limit is enforced by the provider, against an address, not
+    against an object. Every instance holding its own budget means the process
+    spends the sum of them.
+    """
+    limiter = _SHARED_LIMITERS.get(max_per_minute)
+    if limiter is None:
+        limiter = RateLimiter(max_per_minute)
+        _SHARED_LIMITERS[max_per_minute] = limiter
+    return limiter
+
+
 async def with_retries[T](
     operation: str,
     provider: str,

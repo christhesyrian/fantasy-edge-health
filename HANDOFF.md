@@ -27,8 +27,8 @@ tracked in git, so it does not appear on GitHub.
 make quality        # format, lint, mypy, pytest, then the frontend gates
 ```
 
-Expected: **731 Python tests**, **64 frontend tests**, ruff clean,
-`mypy --strict` clean across 154 files, eslint clean, `tsc` clean. Plus
+Expected: **745 Python tests**, **64 frontend tests**, ruff clean,
+`mypy --strict` clean across 155 files, eslint clean, `tsc` clean. Plus
 **23 Playwright end-to-end tests** — `npm run e2e` (12, against a real API) and
 `npm run e2e:preview` (11, against offline preview mode with no API at all).
 
@@ -187,6 +187,24 @@ Each has a regression test named after the symptom.
   records why the model is deliberately not in production.
 
 ### Done since the last handoff
+
+**Live board latency, near your turn (2026-09-04)**
+- Measured first: Sleeper answers in 30 ms and the board recomputes in 27 ms, so
+  the poll wait was the entire delay. Numbers in `docs/PERFORMANCE.md`.
+- **Idleness was defined as 90 seconds without a pick**, which an ordinary
+  two-minute clock trips on every pick — slowing the poller to 9 s for the last
+  third of each one, exactly the window the next pick lands in. The slower the
+  draft, the later you heard. Threshold is now 5 minutes.
+- **The poller did not know whose turn it was**, though `DraftBinding` has always
+  carried the seat. Within 3 picks it polls 3x faster and never goes idle.
+  Worst case near your turn: 9 s → **1 s**.
+- Draft metadata is fetched every 5th poll rather than every poll, which more
+  than pays for it: one draft costs 40 → **24** req/min at rest.
+- **The self-limit did not limit anything.** Every `SleeperProvider` built its
+  own `RateLimiter`, and one is built per live draft and per request-scoped
+  lookup, so twelve pollers each staying under 600/min summed to twelve times
+  that — against a limit Sleeper enforces per IP. Providers now share one
+  limiter per rate.
 
 **Shared-password gate and a deployable backend (2026-09-04)**
 - One `FHE_ACCESS_PASSWORD` in front of the whole API, as middleware rather than

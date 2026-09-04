@@ -49,6 +49,7 @@ from fhe.data.providers.base import (
     RateLimiter,
     RetryPolicy,
     classify_http_error,
+    shared_rate_limiter,
     with_retries,
 )
 from fhe.observability import get_logger
@@ -225,6 +226,7 @@ class SleeperProvider:
         *,
         client: httpx.AsyncClient | None = None,
         retry_policy: RetryPolicy | None = None,
+        limiter: RateLimiter | None = None,
     ) -> None:
         self._settings = settings
         self._base_url = settings.sleeper_base_url.rstrip("/")
@@ -234,7 +236,14 @@ class SleeperProvider:
             headers={"accept": "application/json", "user-agent": "fantasy-health-edge/0.1"},
             follow_redirects=True,
         )
-        self._limiter = RateLimiter(settings.sleeper_max_rpm)
+        # Shared across every provider in the process by default. Sleeper's
+        # limit is per IP, so a per-instance limiter does not limit anything
+        # that matters: one is built per live draft and per request-scoped
+        # lookup, and twelve pollers each politely staying under the ceiling
+        # add up to twelve times the ceiling. Being IP-blocked mid-draft is the
+        # single worst failure this product can suffer, which makes a limiter
+        # that counts what the provider counts worth the shared state.
+        self._limiter = limiter or shared_rate_limiter(settings.sleeper_max_rpm)
         self._retry_policy = retry_policy or RetryPolicy()
 
     async def __aenter__(self) -> Self:

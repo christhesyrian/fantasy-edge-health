@@ -50,7 +50,33 @@ log = get_logger(__name__)
 # Interval multipliers applied to the configured base interval.
 IDLE_INTERVAL_MULTIPLIER: Final = 3.0
 # How long without a pick before the draft counts as idle.
-IDLE_AFTER_SECONDS: Final = 90.0
+#
+# Five minutes, not ninety seconds. A ninety-second threshold is tripped by an
+# ordinary manager using an ordinary two-minute clock, and it trips them at the
+# worst possible moment: the poller slows to nine seconds for the last half of
+# every pick, which is precisely the window the next pick lands in. The result
+# was that the slower the draft, the later you heard about it. A gap this long
+# means the draft is genuinely paused or between rounds.
+IDLE_AFTER_SECONDS: Final = 300.0
+
+# How close the user's turn has to be for freshness to beat frugality.
+#
+# Three picks is roughly the point where the board stops being background
+# reading and starts being the thing you are about to act on: what goes in those
+# picks decides what is still there for you.
+URGENT_PICKS_AWAY: Final = 3
+# Interval used inside that window, as a fraction of the base. Being on the
+# clock with a board a few seconds stale is the exact failure this exists to
+# prevent, and it costs nothing to avoid: a poll is two requests against a
+# provider that allows a thousand a minute.
+URGENT_INTERVAL_MULTIPLIER: Final = 1.0 / 3.0
+
+# Draft metadata is fetched every Nth poll rather than every one. It carries the
+# status, which changes once in a draft's life, while the picks call carries
+# everything that changes constantly. Halving the request cost of a cycle is
+# what pays for polling three times as fast when it matters, and a completed
+# draft is still noticed immediately by arithmetic - see `_is_complete`.
+DRAFT_METADATA_EVERY_N_POLLS: Final = 5
 # Consecutive failures before the poller reports the draft as stale to clients.
 FAILURES_BEFORE_STALE: Final = 2
 # Give up on a draft that has failed this many times in a row; something is
@@ -201,6 +227,7 @@ class DraftPoller:
         self._sequence = sequence or SequenceCounter()
         self._rng = rng or random.Random()  # noqa: S311 - backoff jitter, not crypto
         self._status = PollerStatus(draft_id=binding.draft_id)
+        self._last_draft: SleeperDraft | None = None
         self._on_picks_applied = on_picks_applied
         self._recorder = recorder
         self._stop = asyncio.Event()
@@ -266,7 +293,7 @@ class DraftPoller:
         observed_at = utcnow()
 
         picks = await self._provider.get_draft_picks(self._binding.draft_id)
-        draft = await self._provider.get_draft(self._binding.draft_id)
+        draft = await self._draft_metadata()
 
         DRAFT_POLLS.labels("success").inc()
         recovered = self._status.consecutive_failures > 0
@@ -380,11 +407,37 @@ class DraftPoller:
             note="last known draft state retained",
         )
 
+    async def _draft_metadata(self) -> SleeperDraft | None:
+        """Draft metadata, refreshed periodically rather than every cycle.
+
+        The status it carries changes once in a draft's life; the picks call
+        beside it carries everything that changes constantly. Fetching both
+        every time doubled the cost of a cycle for information that was almost
+        never different.
+        """
+        due = (self._status.poll_count - 1) % DRAFT_METADATA_EVERY_N_POLLS == 0
+        if due or self._last_draft is None:
+            self._last_draft = await self._provider.get_draft(self._binding.draft_id)
+        return self._last_draft
+
+    def _picks_until_user_turn(self) -> int | None:
+        """How many selections until the seat we are watching picks again."""
+        slot = self._binding.user_draft_slot
+        if slot is None:
+            return None
+        return self._state.picks_until_slot_turn(slot)
+
     def _next_interval(self) -> float:
         """Choose the delay before the next poll.
 
-        Three regimes: backing off after failures, slow while the draft is idle,
-        and the configured base interval while picks are landing.
+        Four regimes, in priority order: backing off after failures, urgent
+        because the user is about to pick, slow because the draft is genuinely
+        idle, and the configured base interval otherwise.
+
+        Urgency outranks idleness deliberately. The two collide in exactly the
+        situation that matters - a slow draft approaching your turn - and the
+        old ordering resolved it the wrong way, going quiet just as the picks
+        ahead of you landed.
         """
         base = self._settings.draft_poll_interval_seconds
         ceiling = self._settings.draft_poll_max_interval_seconds
@@ -393,6 +446,10 @@ class DraftPoller:
             backoff = min(ceiling, base * 2 ** min(self._status.consecutive_failures, 6))
             # Full jitter, so many clients recovering together do not synchronise.
             return self._rng.uniform(base, backoff)
+
+        away = self._picks_until_user_turn()
+        if away is not None and away <= URGENT_PICKS_AWAY:
+            return base * URGENT_INTERVAL_MULTIPLIER
 
         age = self._status.age_seconds()
         last_pick = self._state.picks[-1].observed_at if self._state.picks else None

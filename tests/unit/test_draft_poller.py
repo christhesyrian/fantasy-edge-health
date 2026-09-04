@@ -7,6 +7,7 @@ leave the board correct.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -19,7 +20,9 @@ from fhe.data.providers.base import (
     ProviderUnavailableError,
 )
 from fhe.data.providers.sleeper import SleeperDraft, SleeperPick
+from fhe.db.base import utcnow
 from fhe.worker.draft_poller import (
+    URGENT_INTERVAL_MULTIPLIER,
     DraftBinding,
     DraftPoller,
     PollerState,
@@ -72,6 +75,7 @@ class ScriptedProvider:
         self._script = list(script)
         self._draft_status = draft_status
         self.calls = 0
+        self.draft_calls = 0
 
     async def get_draft_picks(self, draft_id: str) -> tuple[SleeperPick, ...]:
         """Return the next scripted response."""
@@ -83,6 +87,7 @@ class ScriptedProvider:
 
     async def get_draft(self, draft_id: str) -> SleeperDraft:
         """Return draft metadata."""
+        self.draft_calls += 1
         return sleeper_draft(self._draft_status)
 
 
@@ -313,6 +318,121 @@ class TestIntervals:
         poller.status.consecutive_failures = 50
 
         assert poller._next_interval() <= settings.draft_poll_max_interval_seconds
+
+
+class TestPickingUrgency:
+    """Polling faster as the user's turn approaches.
+
+    The board stops being background reading a few picks out: what goes in them
+    decides what is left. This is also the only window where the user's own
+    clock is running, which is what the whole feature is about.
+    """
+
+    def poller(self, settings: Settings, binding: DraftBinding, picks: int) -> DraftPoller:
+        """A poller whose state holds ``picks`` completed selections."""
+        instance = DraftPoller(settings, ScriptedProvider([]), InProcessEventBus(), binding)
+        instance.state.apply_picks(
+            [
+                to_domain_pick(sleeper_pick(n, f"sp{n}"), binding, observed_at=utcnow())
+                for n in range(1, picks + 1)
+            ]
+        )
+        return instance
+
+    def test_the_interval_shortens_as_the_users_turn_approaches(
+        self, settings: Settings, binding: DraftBinding
+    ) -> None:
+        # Seat 5 in a twelve-team snake picks at 5, then 20.
+        far = self.poller(settings, binding, picks=8)._next_interval()
+        near = self.poller(settings, binding, picks=17)._next_interval()
+
+        assert near < far
+        assert near == pytest.approx(
+            settings.draft_poll_interval_seconds * URGENT_INTERVAL_MULTIPLIER
+        )
+
+    def test_urgency_beats_idleness(self, settings: Settings, binding: DraftBinding) -> None:
+        """The two collide in exactly the case that matters.
+
+        A slow draft approaching your turn is both "no pick for a while" and
+        "about to be your problem". Resolving that toward frugality is how the
+        poller used to go quiet just as the picks ahead of you landed.
+        """
+        instance = self.poller(settings, binding, picks=17)
+        instance.status.last_success_at = utcnow()
+        # No pick for an hour: unambiguously idle by the age test alone.
+        object.__setattr__(instance.state.picks[-1], "observed_at", utcnow() - timedelta(hours=1))
+
+        assert instance._next_interval() < settings.draft_poll_interval_seconds
+
+    def test_a_two_minute_pick_clock_is_not_idleness(
+        self, settings: Settings, binding: DraftBinding
+    ) -> None:
+        """An ordinary manager on an ordinary clock must not slow the poller.
+
+        The old ninety-second threshold was tripped by every pick that took
+        longer than ninety seconds, and it slowed polling for the remainder of
+        that pick - the exact window the next one lands in.
+        """
+        instance = self.poller(settings, binding, picks=8)
+        instance.status.last_success_at = utcnow()
+        object.__setattr__(
+            instance.state.picks[-1], "observed_at", utcnow() - timedelta(seconds=115)
+        )
+
+        assert instance._next_interval() == settings.draft_poll_interval_seconds
+
+    def test_a_genuinely_paused_draft_still_slows_down(
+        self, settings: Settings, binding: DraftBinding
+    ) -> None:
+        """Frugality is still right when nothing is happening at all."""
+        instance = self.poller(settings, binding, picks=8)
+        instance.status.last_success_at = utcnow()
+        object.__setattr__(
+            instance.state.picks[-1], "observed_at", utcnow() - timedelta(minutes=10)
+        )
+
+        assert instance._next_interval() > settings.draft_poll_interval_seconds
+
+    def test_a_draft_with_no_seat_is_polled_at_the_base_rate(
+        self, settings: Settings, league: LeagueSettings
+    ) -> None:
+        """Watching a draft nobody here is in has no urgent moment."""
+        seatless = DraftBinding(draft_id=DRAFT_ID, league=league, user_draft_slot=None)
+        instance = DraftPoller(settings, ScriptedProvider([]), InProcessEventBus(), seatless)
+
+        assert instance._next_interval() == settings.draft_poll_interval_seconds
+
+
+class TestRequestCost:
+    async def test_draft_metadata_is_not_refetched_every_cycle(
+        self, settings: Settings, binding: DraftBinding
+    ) -> None:
+        """Halving a cycle's cost is what pays for polling faster when it counts.
+
+        The status it carries changes once in a draft's life, while the picks
+        call beside it carries everything that changes constantly.
+        """
+        provider = ScriptedProvider([[] for _ in range(10)])
+        poller = DraftPoller(settings, provider, InProcessEventBus(), binding)
+
+        for _ in range(10):
+            await poller._poll_once()
+
+        assert provider.calls == 10
+        assert provider.draft_calls < 10
+
+    async def test_the_first_poll_still_reads_the_draft(
+        self, settings: Settings, binding: DraftBinding
+    ) -> None:
+        """Connecting to an already-finished draft must notice immediately."""
+        provider = ScriptedProvider([[]], draft_status="complete")
+        poller = DraftPoller(settings, provider, InProcessEventBus(), binding)
+
+        await poller._poll_once()
+
+        assert provider.draft_calls == 1
+        assert poller.status.state is PollerState.COMPLETE
 
 
 class TestCompletion:

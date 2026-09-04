@@ -141,3 +141,59 @@ Stated rather than quietly omitted:
 - **Ingestion throughput**, which is a batch path with no latency requirement.
 - **Cold start**, which matters for a scale-to-zero deployment and was not
   timed.
+
+---
+
+## Live draft latency: how long until a pick shows on the board
+
+Measured 2026-09-04 against a real Sleeper draft and the real 600-player pool.
+
+| Step | Time |
+| --- | --- |
+| Sleeper `GET /draft/{id}/picks` | **30 ms** (p50) |
+| Board re-evaluation after a pick | **27 ms** (p50, 600 players) |
+| Browser refetch of the board | one round trip |
+| **Waiting for the next poll** | **the whole rest of it** |
+
+Everything except the wait is noise, so the poll schedule is the only thing
+worth tuning.
+
+### The schedule, and why it is shaped this way
+
+| Situation | Worst-case delay |
+| --- | --- |
+| Within 3 picks of your turn | **1.0 s** |
+| Mid-round, draft moving | 3.0 s |
+| Draft genuinely paused (no pick for 5 min) | 9.0 s |
+
+Two problems were fixed to get there.
+
+**Idleness was defined as ninety seconds without a pick**, which an ordinary
+manager on an ordinary two-minute clock trips on every single pick. The poller
+slowed to nine seconds for the last third of each one — precisely the window the
+next pick lands in — so the slower the draft, the later you heard about it. The
+threshold is now five minutes, which means paused rather than thinking.
+
+**The poller did not know whose turn it was**, though the binding has always
+carried the seat. Within three picks of your turn it now polls three times
+faster and never goes idle, because that is the only window where your own clock
+is running and where what lands decides what is left.
+
+### It costs less, not more
+
+Draft metadata is fetched every fifth poll instead of every poll. It carries the
+status, which changes once in a draft's life, while the picks call beside it
+carries everything that changes constantly.
+
+| | Before | After |
+| --- | --- | --- |
+| One draft, normal | 40 req/min | **24 req/min** |
+| One draft, approaching your turn | 13 req/min | 72 req/min |
+
+The ceiling is real now. Every `SleeperProvider` built its own `RateLimiter`, and
+one is built per live draft and per request-scoped lookup — so twelve pollers
+each politely staying under a 600/min ceiling added up to twelve times the
+ceiling, against a limit Sleeper enforces per IP. Providers now share one
+limiter per rate, so the process cannot exceed 600/min however many drafts it
+follows; excess requests queue rather than failing, which degrades every
+follower smoothly instead of blacking one out.
