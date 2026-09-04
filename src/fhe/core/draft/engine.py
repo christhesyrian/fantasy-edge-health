@@ -330,11 +330,22 @@ def _score_player(
     # was not measured — a rookie has no snap share, and reading that as "low"
     # would invent a risk out of missing data.
     usage = player.usage
-    support = (
+    measured = (
         usage.corroboration(player.position.value, player.projected_points)
         if usage is not None
         else None
     )
+    # A depth chart is the only forward-looking statement of a role, and so the
+    # only evidence available for the players last season cannot describe: the
+    # rookie with no NFL snaps, and the receiver whose snaps were taken in an
+    # offence he has left. It is taken as an alternative piece of evidence
+    # rather than added to the measured one, because two signals agreeing must
+    # not be worth twice one signal - the whole term is a penalty being lifted,
+    # never a bonus being paid.
+    listed = player.depth_chart.role_support() if player.depth_chart is not None else None
+    signals = [value for value in (measured, listed) if value is not None]
+    support = max(signals) if signals else None
+
     if support is not None and vorp_norm > 0 and support < 1.0:
         share = usage.snap_share if usage is not None else None
         # Scaled by the size of the step being asked for, not by the player's
@@ -349,13 +360,7 @@ def _score_player(
                     name="unsupported_projection",
                     label="Opportunity",
                     points=points,
-                    detail=(
-                        f"Played {share:.0%} of snaps last season and scored below "
-                        "this projection's rate, so it rests on a step up neither "
-                        "his role nor his production has shown."
-                        if share is not None
-                        else "Measured opportunity does not yet support this projection."
-                    ),
+                    detail=_unsupported_detail(player, share),
                 )
             )
 
@@ -511,6 +516,28 @@ def _score_player(
         "availability": availability,
     }
     return total, components, metrics
+
+
+def _unsupported_detail(player: DraftablePlayer, share: float | None) -> str:
+    """Say which evidence is missing, naming the depth chart when it is the gap.
+
+    "Measured opportunity does not yet support this projection" is true of a
+    rookie and of a buried veteran alike, and those are opposite situations for
+    a drafter.
+    """
+    listing = player.depth_chart
+    if listing is not None and not listing.is_starter:
+        return (
+            f"Listed {listing.label} on the depth chart, so this projection "
+            "assumes a role he does not currently hold."
+        )
+    if share is not None:
+        return (
+            f"Played {share:.0%} of snaps last season and scored below this "
+            "projection's rate, so it rests on a step up neither his role nor "
+            "his production has shown."
+        )
+    return "Measured opportunity does not yet support this projection."
 
 
 def _classify(

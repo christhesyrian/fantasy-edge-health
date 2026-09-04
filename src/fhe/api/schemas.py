@@ -130,6 +130,22 @@ class WorkloadOut(ApiModel):
     touches_per_game: float | None = None
 
 
+class DepthChartOut(ApiModel):
+    """Where a player is listed on his team's depth chart.
+
+    Carries ``observed_at`` because a chart from March and one from September
+    are very different claims, and the drawer must be able to say which it is
+    showing rather than presenting both as current.
+    """
+
+    team: str
+    position: str
+    rank: int
+    label: str = Field(description='How the placement reads, e.g. "RB2".')
+    is_starter: bool
+    observed_at: datetime | None = None
+
+
 class UsageOut(ApiModel):
     """Measured opportunity and scoring volatility from the last played season.
 
@@ -202,6 +218,7 @@ class PlayerDetail(PlayerSummary):
     injury_spells: list[InjurySpellOut] = Field(default_factory=list)
     workload: WorkloadOut | None = None
     usage: UsageOut | None = None
+    depth_chart: DepthChartOut | None = None
     playoff_schedule: PlayoffScheduleOut | None = None
     is_rookie: bool = False
     rookie_opportunity: RookieOpportunityOut | None = None

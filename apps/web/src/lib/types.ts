@@ -46,6 +46,16 @@ export const injuryEventSchema = z.object({
   observed_at: z.string().nullable().optional(),
 });
 
+/** Where a player is listed on his team's depth chart, as the engine read it. */
+export const depthChartSchema = z.object({
+  team: z.string(),
+  position: z.string(),
+  rank: z.number(),
+  label: z.string(),
+  is_starter: z.boolean(),
+  observed_at: z.string().nullable().optional(),
+});
+
 /** One distinct injury, already collapsed from its weekly reports by the engine. */
 export const injurySpellSchema = z.object({
   body_region: z.string(),
@@ -90,6 +100,7 @@ export const playerDetailSchema = playerSummarySchema.extend({
   health: healthSchema.nullable().optional(),
   injury_history: z.array(injuryEventSchema).default([]),
   injury_spells: z.array(injurySpellSchema).default([]),
+  depth_chart: depthChartSchema.nullable().optional(),
   workload: workloadSchema.nullable().optional(),
   projected_points: z.number().nullable().optional(),
   market_adp: z.number().nullable().optional(),
@@ -308,6 +319,7 @@ export type ScoreComponent = z.infer<typeof scoreComponentSchema>;
 export type Health = z.infer<typeof healthSchema>;
 export type InjuryEvent = z.infer<typeof injuryEventSchema>;
 export type InjurySpell = z.infer<typeof injurySpellSchema>;
+export type DepthChart = z.infer<typeof depthChartSchema>;
 export type Workload = z.infer<typeof workloadSchema>;
 export type PlayerSummary = z.infer<typeof playerSummarySchema>;
 export type PlayerDetail = z.infer<typeof playerDetailSchema>;

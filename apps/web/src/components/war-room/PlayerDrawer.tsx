@@ -99,11 +99,58 @@ function Timeline({ spells }: { spells: InjurySpell[] }) {
   );
 }
 
+/**
+ * Where the player is listed today, above the bars describing last season.
+ *
+ * The two answer different questions and the ordering says so: a chart is the
+ * only forward-looking statement of a role, and it is the only thing here that
+ * covers a rookie or a player who changed teams over the summer.
+ */
+function DepthListing({ player }: { player: PlayerDetail }) {
+  const listing = player.depth_chart;
+  if (!listing) {
+    return null;
+  }
+  const observed = listing.observed_at
+    ? new Date(listing.observed_at).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+      })
+    : null;
+  return (
+    <div className="mb-3 flex items-baseline justify-between border-b border-[var(--hairline)] pb-2">
+      <span className="text-[0.75rem] text-[var(--text-secondary)]">Depth chart</span>
+      <span className="flex items-baseline gap-2">
+        <span
+          className="display text-[0.8125rem]"
+          style={{
+            color: listing.is_starter
+              ? "var(--text-primary)"
+              : "var(--color-hazard-400)",
+          }}
+        >
+          {listing.label}
+        </span>
+        {observed ? (
+          <span className="text-[0.7rem] text-[var(--text-muted)]">
+            as of {observed}
+          </span>
+        ) : null}
+      </span>
+    </div>
+  );
+}
+
 /** Horizontal usage bars. A sparkline would imply a trend one season cannot support. */
 function Usage({ player }: { player: PlayerDetail }) {
   const workload = player.workload;
   if (!workload) {
-    return <p className="text-sm text-[var(--text-muted)]">No usage on file.</p>;
+    return (
+      <div>
+        <DepthListing player={player} />
+        <p className="text-sm text-[var(--text-muted)]">No usage on file.</p>
+      </div>
+    );
   }
 
   const bars = [
@@ -115,6 +162,7 @@ function Usage({ player }: { player: PlayerDetail }) {
 
   return (
     <div className="space-y-2">
+      <DepthListing player={player} />
       {bars.map((bar) => (
         <div key={bar.label}>
           <div className="flex items-baseline justify-between">

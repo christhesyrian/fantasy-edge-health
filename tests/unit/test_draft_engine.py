@@ -8,11 +8,13 @@ score that cannot be reconciled with its own explanation.
 from __future__ import annotations
 
 import itertools
+from collections.abc import Sequence
 
 import pytest
 
+from fhe.core.depth import DepthChartPlacement
 from fhe.core.draft.board import AlertLevel, build_board
-from fhe.core.draft.engine import DraftContext, rank_board
+from fhe.core.draft.engine import DraftContext, PlayerRecommendation, rank_board
 from fhe.core.draft.models import DraftablePlayer
 from fhe.core.draft.roster import compute_roster_need
 from fhe.core.draft.scarcity import build_tiers, compute_scarcity
@@ -286,6 +288,97 @@ class TestPositionalSanity:
 
         assert rookie.usage is None
         assert not [c for c in by_uuid["rookie"].components if c.name == "unsupported_projection"]
+
+    def test_a_listed_starter_no_longer_looks_like_an_unsupported_bet(self) -> None:
+        """The case the depth chart exists for.
+
+        A back who played 22% of snaps as a rookie and is now his team's listed
+        starter has made the step up the projection assumes. Judging him on last
+        season alone charged him five points for a job he has already won.
+        """
+        promoted = make_player("promoted", Position.RB, projected_points=250.0, adp=10.0)
+        usage = UsageProfile(
+            games_sampled=16, snap_share=0.22, points_per_game=5.0, points_stdev=3.0
+        )
+        object.__setattr__(promoted, "usage", usage)
+
+        buried = make_player("buried", Position.RB, projected_points=250.0, adp=10.0)
+        object.__setattr__(buried, "usage", usage)
+
+        object.__setattr__(
+            promoted,
+            "depth_chart",
+            DepthChartPlacement(team="JAX", position="RB", rank=1),
+        )
+        object.__setattr__(
+            buried,
+            "depth_chart",
+            DepthChartPlacement(team="JAX", position="RB", rank=4),
+        )
+        filler = [
+            make_player(f"rb{i}", Position.RB, projected_points=180.0 - i, adp=float(i + 20))
+            for i in range(30)
+        ]
+
+        recs = rank_board(build_context([promoted, buried, *filler], league_ppr()))
+        by_uuid = {r.player_uuid: r for r in recs}
+
+        assert not [c for c in by_uuid["promoted"].components if c.name == "unsupported_projection"]
+        assert [c for c in by_uuid["buried"].components if c.name == "unsupported_projection"]
+
+    def test_a_depth_listing_never_adds_value_of_its_own(self) -> None:
+        """It lifts a penalty; it does not pay a bonus.
+
+        A projection already contains what a starting role produces, so paying
+        again for being listed first would count the same fact twice.
+        """
+        proven = make_player("proven", Position.RB, projected_points=250.0, adp=10.0)
+        object.__setattr__(
+            proven,
+            "usage",
+            UsageProfile(games_sampled=16, snap_share=0.90, points_per_game=16.0, points_stdev=4.0),
+        )
+        filler = [
+            make_player(f"rb{i}", Position.RB, projected_points=180.0 - i, adp=float(i + 20))
+            for i in range(30)
+        ]
+
+        without = rank_board(build_context([proven, *filler], league_ppr()))
+        object.__setattr__(
+            proven, "depth_chart", DepthChartPlacement(team="SEA", position="RB", rank=1)
+        )
+        with_listing = rank_board(build_context([proven, *filler], league_ppr()))
+
+        def score(recs: Sequence[PlayerRecommendation]) -> float:
+            return next(r.overall_score for r in recs if r.player_uuid == "proven")
+
+        assert score(with_listing) == score(without)
+
+    def test_a_wrong_depth_listing_cannot_demote_a_proven_starter(self) -> None:
+        """The current charts put Green Bay's lead back at RB4.
+
+        Measured usage and the listing are combined by taking the better of the
+        two, so a bad chart costs a player nothing. Letting a scraped practice
+        report override a season of snaps would be the worse failure by far.
+        """
+        proven = make_player("proven", Position.RB, projected_points=250.0, adp=10.0)
+        object.__setattr__(
+            proven,
+            "usage",
+            UsageProfile(games_sampled=16, snap_share=0.90, points_per_game=16.0, points_stdev=4.0),
+        )
+        object.__setattr__(
+            proven, "depth_chart", DepthChartPlacement(team="GB", position="RB", rank=4)
+        )
+        filler = [
+            make_player(f"rb{i}", Position.RB, projected_points=180.0 - i, adp=float(i + 20))
+            for i in range(30)
+        ]
+
+        recs = rank_board(build_context([proven, *filler], league_ppr()))
+        by_uuid = {r.player_uuid: r for r in recs}
+
+        assert not [c for c in by_uuid["proven"].components if c.name == "unsupported_projection"]
 
     def test_the_playoff_schedule_moves_the_score_both_ways(self) -> None:
         """Unlike opportunity, this may credit as well as discount.

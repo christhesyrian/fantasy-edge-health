@@ -353,9 +353,7 @@ class TestRecording:
         provider = ScriptedProvider(
             [[sleeper_pick(1, "sp1")], [sleeper_pick(1, "sp1"), sleeper_pick(2, "sp2")]]
         )
-        poller = DraftPoller(
-            settings, provider, InProcessEventBus(), binding, recorder=recorder
-        )
+        poller = DraftPoller(settings, provider, InProcessEventBus(), binding, recorder=recorder)
 
         await poller._poll_once()
         await poller._poll_once()
@@ -370,9 +368,7 @@ class TestRecording:
     ) -> None:
         recorder = RecordingRecorder()
         provider = ScriptedProvider([[sleeper_pick(1, "sp1")], [sleeper_pick(1, "sp1")]])
-        poller = DraftPoller(
-            settings, provider, InProcessEventBus(), binding, recorder=recorder
-        )
+        poller = DraftPoller(settings, provider, InProcessEventBus(), binding, recorder=recorder)
 
         await poller._poll_once()
         await poller._poll_once()
@@ -400,9 +396,7 @@ class TestRecording:
         """
         recorder = RecordingRecorder(fails=True)
         provider = ScriptedProvider([[sleeper_pick(1, "sp1")]])
-        poller = DraftPoller(
-            settings, provider, InProcessEventBus(), binding, recorder=recorder
-        )
+        poller = DraftPoller(settings, provider, InProcessEventBus(), binding, recorder=recorder)
 
         await poller._poll_once()
 

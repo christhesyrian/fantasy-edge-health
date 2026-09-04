@@ -147,9 +147,7 @@ def to_domain_pick(pick: SleeperPick, binding: DraftBinding, *, observed_at: dat
     losing a pick because we failed to recognise a rookie would be far worse
     than showing an unresolved name.
     """
-    player_uuid = binding.player_id_map.get(
-        pick.player_id, unresolved_player_uuid(pick.player_id)
-    )
+    player_uuid = binding.player_id_map.get(pick.player_id, unresolved_player_uuid(pick.player_id))
     return DraftPick(
         pick_no=pick.pick_no,
         round_number=pick.round_number,

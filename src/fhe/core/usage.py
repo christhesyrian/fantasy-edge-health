@@ -104,7 +104,7 @@ class UsageProfile:
             return None
         return min(1.0, self.snap_share / threshold)
 
-    def production_support(self, projected_points: float | None) -> float | None:
+    def production_support(self, position: str, projected_points: float | None) -> float | None:
         """How far last season's scoring already justifies the projection, 0-1.
 
         The other half of corroboration, and the half that stops the snap-share
@@ -112,7 +112,17 @@ class UsageProfile:
         nonetheless outscored the projection being asked of him is not resting
         on a step up — he has already done it. Judging him on opportunity alone
         flagged exactly that player.
+
+        Refuses the positions whose production is not measured, for the same
+        reason opportunity does. The weekly stats hold 569 kicker rows for 2025
+        averaging **0.00** fantasy points, because the provider's fantasy-points
+        columns do not cover kicking at all. Read literally, that says every
+        kicker in the league scored nothing and every kicker projection is
+        baseless — which took ten points off all of them. An unmeasured player
+        is unknown, not idle.
         """
+        if position in UNJUDGED_POSITIONS:
+            return None
         if not self.is_measured or self.points_per_game is None:
             return None
         if projected_points is None or projected_points <= 0:
@@ -133,7 +143,7 @@ class UsageProfile:
             value
             for value in (
                 self.opportunity_support(position),
-                self.production_support(projected_points),
+                self.production_support(position, projected_points),
             )
             if value is not None
         ]

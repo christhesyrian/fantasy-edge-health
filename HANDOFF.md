@@ -4,7 +4,7 @@
 decisions and their reasoning, the bugs already found, and the ordered backlog —
 so none of it has to be re-derived.
 
-- **Last updated:** 2026-09-04 (injury-spell and scoring-format pass)
+- **Last updated:** 2026-09-04 (injury spells, scoring format, picks, depth charts)
 - **Branch:** `master`, working tree clean
 - **Governing spec:** [`docs/MASTER_BUILD_DIRECTIVE.md`](docs/MASTER_BUILD_DIRECTIVE.md)
 
@@ -27,8 +27,8 @@ tracked in git, so it does not appear on GitHub.
 make quality        # format, lint, mypy, pytest, then the frontend gates
 ```
 
-Expected: **635 Python tests**, **55 frontend tests**, ruff clean,
-`mypy --strict` clean across 144 files, eslint clean, `tsc` clean. Plus
+Expected: **680 Python tests**, **55 frontend tests**, ruff clean,
+`mypy --strict` clean across 150 files, eslint clean, `tsc` clean. Plus
 **23 Playwright end-to-end tests** — `npm run e2e` (12, against a real API) and
 `npm run e2e:preview` (11, against offline preview mode with no API at all).
 
@@ -182,18 +182,46 @@ Each has a regression test named after the symptom.
 - **Light-mode contrast audit** and an automated a11y check in CI.
 - **Multi-worker support** — needs shared poller ownership, not just the shared
   event bus that already exists. `docs/DEPLOYMENT.md` §7.
-- **Picks are never persisted.** `draft_picks` is declared but nothing writes to
-  it: a live draft's picks exist only in the in-memory session and are re-fetched
-  from Sleeper on recovery. That is fine while Sleeper serves the draft, and
-  Sleeper has already 404'd one completed draft (see §3). No post-draft record
-  survives, and the table is dead schema until it does.
-- **Depth charts are not ingested.** `depth_chart_snapshots` has 0 rows, so
-  "is this player actually starting" is inferred from usage alone.
 - **Serving path for the learned model**, if it is ever promoted: a model
   registry, versioned artefacts, and drift monitoring. `docs/MODEL_CARD.md`
   records why the model is deliberately not in production.
 
 ### Done since the last handoff
+
+**Picks are persisted (2026-09-04)**
+- `draft_picks` had never been written to. The poller now hands every newly
+  applied pick to a one-method `PickRecorder`, and connecting records the picks
+  already made (by the poller's first cycle they are duplicates, so a draft
+  joined in round four would otherwise keep no record of rounds one to three).
+- Every database failure is caught. Testing the poller against a recorder that
+  breaks its no-raise contract found the exception escaping into the poll loop,
+  where a database problem would have counted as a *provider* failure — backing
+  off and marking the feed stale while Sleeper was serving fine.
+
+**Depth charts ingested and read (2026-09-04)**
+- `fhe ingest depth-charts` stores the newest published chart: 575 players from
+  a snapshot scraped the same day. The file has no week column, only a scrape
+  timestamp, so it is stored at the season-long sentinel with `dt` carried as
+  `observed_at`.
+- **`pos_rank` is the depth order; `pos_slot` is the formation alignment.** Two
+  receivers share slot 1 while ranking first and fourth; reading the wrong
+  column would rank half a receiving corps as starters.
+- Feeds opportunity corroboration as an *alternative* piece of evidence, taken
+  as the better of the two rather than added. It answers the question last
+  season cannot — the rookie with no NFL snaps, the receiver whose snaps were
+  taken in an offence he has left. Bhayshul Tuten, 22% of snaps last year and
+  now Jacksonville's listed starter, was being docked 5.15 points for a step up
+  he has already made.
+- It can never demote: the current chart lists Josh Jacobs, Green Bay's lead
+  back, at RB4. Across the top sixty by ADP the source agrees with the market
+  59 times out of 60, which is enough to lean on and nowhere near enough to
+  override a season of measured snaps.
+- **Kickers were losing ten points to a phantom.** `stats_player_week` carries
+  569 kicker rows for 2025 averaging **0.00** fantasy points, because the
+  provider's fantasy-points columns do not cover kicking. Production support
+  read that as "scored nothing" and called every kicker projection baseless.
+  Kickers and defences are now excluded from production judgement, as they
+  already were from opportunity.
 
 **Injury model — count injuries, not injury reports (2026-09-04)**
 - The archive holds one row per weekly report, so a nine-week absence arrived as

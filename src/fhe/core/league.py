@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import date
 from functools import cached_property
 
 from fhe.core.errors import LeagueConfigurationError
@@ -306,3 +307,14 @@ class LeagueSettings:
         if next_pick is None:
             return None
         return next_pick - current_pick
+
+
+def season_for(today: date) -> int:
+    """The NFL season a date belongs to.
+
+    The season is named for the calendar year it starts in, so anything before
+    March belongs to the previous year's season rather than the new one. Takes
+    the date rather than reading a clock, which is what lets this live in the
+    domain and be tested at a fixed instant.
+    """
+    return today.year if today.month >= 3 else today.year - 1

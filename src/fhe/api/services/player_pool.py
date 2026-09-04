@@ -27,6 +27,7 @@ from datetime import date, datetime
 from sqlalchemy import case, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fhe.core.depth import DepthChartPlacement
 from fhe.core.draft.models import DraftablePlayer
 from fhe.core.health import (
     HealthInputs,
@@ -46,7 +47,12 @@ from fhe.core.types import (
 from fhe.core.usage import UsageProfile
 from fhe.db.base import SEASON_LONG_WEEK
 from fhe.db.models.fantasy import AdpSnapshot, FantasyProjection
-from fhe.db.models.football import PlayerWeeklyStat, ScheduledGame, SnapCount
+from fhe.db.models.football import (
+    DepthChartSnapshot,
+    PlayerWeeklyStat,
+    ScheduledGame,
+    SnapCount,
+)
 from fhe.db.models.health import CurrentPlayerHealth, InjuryEvent
 from fhe.db.models.player import Player
 from fhe.observability import get_logger
@@ -90,6 +96,7 @@ class PoolProvenance:
     with_adp: int
     with_health: int
     with_workload: int = 0
+    with_depth_chart: int = 0
     projection_sources: tuple[str, ...] = field(default=())
     adp_sources: tuple[str, ...] = field(default=())
     projection_observed_at: datetime | None = None
@@ -248,6 +255,9 @@ async def load_player_pool(
     workloads = await _workload(session, uuids, season - 1)
     # Same season as workload: the most recent one actually played.
     usage = await _usage(session, uuids, season - 1, scoring_format)
+    # The one signal that describes *this* season's role rather than last
+    # season's, which is why it is read for `season` and not `season - 1`.
+    depth = await _depth_chart(session, uuids, season)
     playoff = await _playoff_schedule(session, season, scoring_format)
     rookie_landing = await _rookie_opportunity(session, season)
 
@@ -300,6 +310,7 @@ async def load_player_pool(
                 injury_history=events,
                 workload=workloads.get(uuid),
                 usage=usage.get(uuid),
+                depth_chart=depth.get(uuid),
                 is_rookie=player.rookie_season == season,
                 rookie_opportunity=(
                     rookie_landing.get(player.team.upper())
@@ -322,6 +333,7 @@ async def load_player_pool(
         with_adp=sum(1 for p in pool if p.adp is not None),
         with_health=len(health_rows),
         with_workload=len(workloads),
+        with_depth_chart=sum(1 for p in pool if p.depth_chart is not None),
         projection_sources=tuple(sorted({p.source for p in projections.values()})),
         adp_sources=tuple(sorted({a.source for a in adp.values()})),
         projection_observed_at=max(
@@ -339,6 +351,7 @@ async def load_player_pool(
         with_adp=provenance.with_adp,
         with_health=provenance.with_health,
         with_workload=provenance.with_workload,
+        with_depth_chart=provenance.with_depth_chart,
         wanted_scoring_format=scoring_format.value,
         substituted_scoring_format=(
             provenance.substituted_scoring_format.value
@@ -752,6 +765,44 @@ async def _usage(
             points_stdev=_stdev(row.points, row.points_squared),
         )
     return profiles
+
+
+async def _depth_chart(
+    session: AsyncSession, uuids: list[str], season: int
+) -> dict[str, DepthChartPlacement]:
+    """The most recent depth-chart listing per player.
+
+    Stored at the season-long sentinel because the provider publishes a scrape
+    timestamp rather than a week, so there is exactly one row per player per
+    source and the newest source wins on ties.
+    """
+    rows = (
+        (
+            await session.execute(
+                select(DepthChartSnapshot)
+                .where(
+                    DepthChartSnapshot.player_uuid.in_(uuids),
+                    DepthChartSnapshot.season == season,
+                    DepthChartSnapshot.week == SEASON_LONG_WEEK,
+                    DepthChartSnapshot.depth_order.isnot(None),
+                )
+                .order_by(DepthChartSnapshot.observed_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {
+        row.player_uuid: DepthChartPlacement(
+            team=(row.team or "").upper(),
+            position=row.depth_position or "",
+            # Guarded by the isnot(None) filter above; the cast keeps mypy
+            # honest about a column that is nullable in the schema.
+            rank=int(row.depth_order or 0),
+            observed_at=row.observed_at,
+        )
+        for row in rows
+    }
 
 
 async def _workload(

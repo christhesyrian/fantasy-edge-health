@@ -292,7 +292,7 @@ production path reads the published Parquet assets directly from Python.
 | --- | --- | --- | --- |
 | Injuries | `injuries` | `injuries_{season}.parquet` | **2009 – 2025** |
 | Snap counts | `snap_counts` | `snap_counts_{season}.parquet` | 2012 – 2025 |
-| Depth charts | `depth_charts` | `depth_charts_{season}.parquet` | 2001 – 2026 |
+| Depth charts | `depth_charts` | `depth_charts_{season}.parquet` | 2001 – **2026** |
 | Rosters | `rosters` | `roster_{season}.parquet` | 1920 – 2026 |
 | Weekly player stats | **`stats_player`** | `stats_player_week_{season}.parquet` | 1999 – 2025 |
 | Players (identity) | `players` | `players.parquet` | rebuilt daily |
@@ -302,6 +302,33 @@ production path reads the published Parquet assets directly from Python.
 > seasons — `player_stats_2025.parquet` returns **404**, while
 > `stats_player/stats_player_week_2025.parquet` is present and complete (19,422
 > rows). Reading the legacy tag would silently yield nothing for recent seasons.
+
+> **Depth charts are scrape snapshots, not weekly records.** The file carries no
+> week column at all — only `dt`, the timestamp of the scrape. 2026 holds
+> **496,713 rows across 168 snapshots**, roughly daily since March, and the
+> newest was published the same day it was read (verified 2026-09-04). The
+> ingestion stores only that newest snapshot, at the season-long week sentinel,
+> and carries `dt` through as `observed_at`. Deriving a week from the scrape date
+> would invent a fact the source never supplied.
+>
+> **`pos_rank` is the depth order; `pos_slot` is the alignment.** Two receivers
+> can share `pos_slot` 1 while ranking first and fourth, because the slot
+> describes where a player lines up in the formation. Reading `pos_slot` as a
+> depth order would rank half a receiving corps as starters.
+>
+> **Depth charts are good but not authoritative.** Across the top sixty players
+> by ADP the source agrees with the market **59 times out of 60** (measured
+> 2026-09-04). The exception is Green Bay, which lists Josh Jacobs — their clear
+> lead back, on 59% of snaps last season — at **RB4** behind MarShawn Lloyd.
+> This is why the engine combines a listing with measured usage by taking the
+> better of the two: a chart can lift a player whose usage record is silent, and
+> can never demote one.
+>
+> **Kicking is absent from the fantasy-points columns.** `stats_player_week`
+> carries 569 kicker rows for 2025 whose `fantasy_points_ppr` averages **0.00**.
+> Read literally that says every kicker scored nothing, which the corroboration
+> model took as proof that every kicker projection was baseless. Kickers and
+> defences are excluded from production judgement for this reason.
 
 > **Snap counts use a different join key.** They are keyed by
 > **`pfr_player_id`**, not `gsis_id` like every other dataset here. Weekly stats

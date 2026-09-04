@@ -14,10 +14,12 @@ import argparse
 import asyncio
 import sys
 from collections.abc import Sequence
+from datetime import date
 from pathlib import Path
 
 from fhe import __version__
 from fhe.config import Settings, get_settings
+from fhe.core.league import season_for
 from fhe.observability import configure_logging, get_logger
 
 # The frontend imports this file directly, so it lives inside the web app's
@@ -152,6 +154,27 @@ async def _ingest_schedule(settings: Settings, seasons: Sequence[int]) -> int:
         print(
             f"schedule: {run.status().value} — read {run.rows_read}, wrote {run.rows_written}, "
             f"rejected {run.rows_rejected}"
+        )
+        return 0 if run.rows_written else 1
+    finally:
+        await engine.dispose()
+
+
+async def _ingest_depth_charts(settings: Settings, season: int) -> int:
+    """Load the current depth chart, which says who is actually going to play."""
+    from fhe.data.ingest.nflverse_depth_charts import ingest_depth_charts
+    from fhe.data.providers.nflverse import NflverseProvider
+    from fhe.db import create_engine, create_session_factory
+
+    await _create_schema(settings)
+    engine = create_engine(settings)
+    factory = create_session_factory(engine)
+    try:
+        async with NflverseProvider(settings) as nflverse:
+            run = await ingest_depth_charts(factory, nflverse, season)
+        print(
+            f"depth charts: {run.status().value} — read {run.rows_read}, "
+            f"wrote {run.rows_written}, rejected {run.rows_rejected}"
         )
         return 0 if run.rows_written else 1
     finally:
@@ -521,6 +544,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Seasons to load. The upcoming one is published before it is played.",
     )
 
+    depth = ingest_sub.add_parser(
+        "depth-charts", help="Load the current depth chart, for who is starting"
+    )
+    depth.add_argument(
+        "--season",
+        type=int,
+        default=season_for(date.today()),
+        help="Season to load. Only the newest published chart is stored.",
+    )
+
     workload = ingest_sub.add_parser("workload", help="Backfill weekly stats and snap counts")
     workload.add_argument(
         "--seasons",
@@ -621,6 +654,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return asyncio.run(_ingest_schedule(settings, args.seasons))
         if args.dataset == "workload":
             return asyncio.run(_ingest_workload(settings, args.seasons))
+        if args.dataset == "depth-charts":
+            return asyncio.run(_ingest_depth_charts(settings, args.season))
         return asyncio.run(_ingest_injuries(settings, args.seasons))
     if args.command == "simulate":
         return _simulate(args.seed, args.rounds, args.slot, args.teams)

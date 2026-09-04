@@ -14,7 +14,6 @@ component written for one works in the other.
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -25,6 +24,7 @@ from fhe.api.schemas import PlayerDetail, PlayerPage
 from fhe.api.services.player_pool import load_player_pool
 from fhe.core.draft.models import DraftablePlayer
 from fhe.core.errors import UnknownPlayerError
+from fhe.core.league import season_for
 from fhe.core.types import Position, ScoringFormat
 from fhe.db.base import utcnow
 
@@ -64,7 +64,7 @@ async def list_players(
     as_of = utcnow().date()
     pool, provenance = await load_player_pool(
         session,
-        season=season if season is not None else _default_season(as_of),
+        season=season if season is not None else season_for(as_of),
         scoring_format=ScoringFormat.parse(scoring_format),
         as_of=as_of,
     )
@@ -98,7 +98,7 @@ async def get_player(
     as_of = utcnow().date()
     pool, _ = await load_player_pool(
         session,
-        season=season if season is not None else _default_season(as_of),
+        season=season if season is not None else season_for(as_of),
         scoring_format=ScoringFormat.parse(scoring_format),
         as_of=as_of,
     )
@@ -106,12 +106,3 @@ async def get_player(
         if player.player_uuid == player_uuid:
             return player_detail(player, is_demo=False)
     raise UnknownPlayerError(f"no player {player_uuid!r}")
-
-
-def _default_season(today: date) -> int:
-    """The season a date belongs to.
-
-    The NFL season is named for the calendar year it starts in, so anything
-    before March belongs to the previous year's season rather than the new one.
-    """
-    return today.year if today.month >= 3 else today.year - 1

@@ -8,6 +8,7 @@ silently reshaped payload.
 from __future__ import annotations
 
 from fhe.api.schemas import (
+    DepthChartOut,
     DraftAlertOut,
     DraftPickOut,
     HealthOut,
@@ -147,6 +148,18 @@ def player_detail(player: DraftablePlayer, *, is_demo: bool) -> PlayerDetail:
                 difficulty=round(playoff.difficulty, 3) if playoff.difficulty is not None else None,
             )
             if playoff
+            else None
+        ),
+        depth_chart=(
+            DepthChartOut(
+                team=listing.team,
+                position=listing.position,
+                rank=listing.rank,
+                label=listing.label,
+                is_starter=listing.is_starter,
+                observed_at=listing.observed_at,
+            )
+            if (listing := player.depth_chart)
             else None
         ),
         usage=(

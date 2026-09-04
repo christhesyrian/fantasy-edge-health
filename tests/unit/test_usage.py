@@ -40,7 +40,7 @@ class TestMeasurement:
         empty = UsageProfile()
 
         assert empty.opportunity_support("WR") is None
-        assert empty.production_support(300.0) is None
+        assert empty.production_support("WR", 300.0) is None
         assert empty.corroboration("WR", 300.0) is None
         assert empty.volatility is None
 
@@ -79,7 +79,7 @@ class TestProductionSupport:
 
         opportunity = efficient.opportunity_support("WR")
         assert opportunity is not None and opportunity < 1.0
-        assert efficient.production_support(340.0) == pytest.approx(1.0)
+        assert efficient.production_support("WR", 340.0) == pytest.approx(1.0)
         assert efficient.corroboration("WR", 340.0) == pytest.approx(1.0)
 
     def test_a_large_step_up_is_only_partly_corroborated(self) -> None:

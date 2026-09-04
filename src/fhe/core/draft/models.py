@@ -7,6 +7,7 @@ from datetime import datetime
 from enum import StrEnum, unique
 from typing import Final
 
+from fhe.core.depth import DepthChartPlacement
 from fhe.core.health.models import (
     HealthAssessment,
     InjuryHistoryEvent,
@@ -129,6 +130,7 @@ class DraftablePlayer:
     injury_history: tuple[InjuryHistoryEvent, ...] = field(default=())
     workload: WorkloadSummary | None = None
     usage: UsageProfile | None = None
+    depth_chart: DepthChartPlacement | None = None
     playoff_schedule: PlayoffSchedule | None = None
     is_rookie: bool = False
     rookie_opportunity: RookieOpportunity | None = None

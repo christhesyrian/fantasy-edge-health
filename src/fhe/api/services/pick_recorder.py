@@ -103,9 +103,7 @@ class DatabasePickRecorder:
             self._draft_row_ids[draft_id] = row_id
         return row_id
 
-    async def _write(
-        self, session: AsyncSession, row_id: int, picks: Sequence[DraftPick]
-    ) -> int:
+    async def _write(self, session: AsyncSession, row_id: int, picks: Sequence[DraftPick]) -> int:
         """Upsert the picks and advance the draft's last-pick marker."""
         now = utcnow()
         rows = [

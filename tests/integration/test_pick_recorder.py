@@ -65,11 +65,7 @@ async def stored(session_factory: Any) -> list[DraftPickRecord]:
     """Every persisted pick, in draft order."""
     async with session_factory() as session:
         return list(
-            (
-                await session.execute(
-                    select(DraftPickRecord).order_by(DraftPickRecord.pick_no)
-                )
-            )
+            (await session.execute(select(DraftPickRecord).order_by(DraftPickRecord.pick_no)))
             .scalars()
             .all()
         )
@@ -155,17 +151,13 @@ class TestRecording:
 
         async with session_factory() as session:
             draft = (
-                await session.execute(
-                    select(Draft).where(Draft.provider_draft_id == DRAFT_ID)
-                )
+                await session.execute(select(Draft).where(Draft.provider_draft_id == DRAFT_ID))
             ).scalar_one()
             assert draft.last_pick_observed_at is not None
 
 
 class TestFailureIsNeverFatal:
-    async def test_an_unknown_draft_is_logged_not_raised(
-        self, session_factory: Any
-    ) -> None:
+    async def test_an_unknown_draft_is_logged_not_raised(self, session_factory: Any) -> None:
         """No parent row means nothing can be written, and that is not a crash."""
         recorder = DatabasePickRecorder(session_factory)
         assert await recorder.record("no-such-draft", [domain_pick(1, "p-000")]) == 0
