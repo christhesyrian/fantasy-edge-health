@@ -19,6 +19,7 @@ easier to read.
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -40,6 +41,7 @@ from fhe.core.types import (
     Position,
     ScoringFormat,
 )
+from fhe.core.usage import UsageProfile
 from fhe.db.base import SEASON_LONG_WEEK
 from fhe.db.models.fantasy import AdpSnapshot, FantasyProjection
 from fhe.db.models.football import PlayerWeeklyStat, SnapCount
@@ -227,6 +229,8 @@ async def load_player_pool(
     history = await _injury_history(session, uuids, season)
     # Workload describes the season just played, not the one being drafted for.
     workloads = await _workload(session, uuids, season - 1)
+    # Same season as workload: the most recent one actually played.
+    usage = await _usage(session, uuids, season - 1, scoring_format)
 
     pool: list[DraftablePlayer] = []
     for player in player_rows:
@@ -276,6 +280,7 @@ async def load_player_pool(
                 health=assessment,
                 injury_history=events,
                 workload=workloads.get(uuid),
+                usage=usage.get(uuid),
                 bye_week=None,
                 age=player.age,
                 years_experience=player.years_experience,
@@ -366,6 +371,106 @@ async def _latest_adp(
         .all()
     )
     return {row.player_uuid: row for row in rows}
+
+
+# Which weekly fantasy-points column each scoring family reads.
+_POINTS_COLUMN = {
+    ScoringFormat.PPR: PlayerWeeklyStat.fantasy_points_ppr,
+    ScoringFormat.HALF_PPR: PlayerWeeklyStat.fantasy_points_half_ppr,
+    ScoringFormat.STANDARD: PlayerWeeklyStat.fantasy_points_standard,
+}
+
+
+def _stdev(mean: float | None, mean_of_squares: float | None) -> float | None:
+    """Population standard deviation from a mean and a mean of squares.
+
+    Clamped at zero before the square root: floating-point error can make a
+    constant series produce a variance of -1e-12.
+    """
+    if mean is None or mean_of_squares is None:
+        return None
+    variance = float(mean_of_squares) - float(mean) ** 2
+    return round(math.sqrt(max(0.0, variance)), 2)
+
+
+async def _usage(
+    session: AsyncSession, uuids: list[str], season: int, scoring_format: ScoringFormat
+) -> dict[str, UsageProfile]:
+    """Measured opportunity and scoring volatility for a season.
+
+    Separate from :func:`_workload`, which serves the health model's exposure
+    terms. This one answers a different question — whether a projection is
+    corroborated by opportunity, and how steady the scoring was — so it reads
+    snap *share* rather than snap count, and the spread of points rather than
+    their level.
+
+    The spread is derived from two averages rather than a `stddev` function,
+    because `stddev_samp` is PostgreSQL-only and this application also runs on
+    SQLite — the zero-infrastructure fallback would have raised "no such
+    function" the moment a board was built. Mean and mean-of-squares are
+    portable, and the population standard deviation they give differs
+    negligibly from the sample one across seventeen games.
+
+    Still aggregated in SQL: pulling eighteen weeks for six hundred players to
+    average them in Python would move ten thousand rows to do arithmetic the
+    database already knows how to do.
+    """
+    points = _POINTS_COLUMN[scoring_format]
+    stat_rows = (
+        await session.execute(
+            select(
+                PlayerWeeklyStat.player_uuid,
+                func.count().label("games"),
+                func.avg(PlayerWeeklyStat.carries + PlayerWeeklyStat.targets).label("touches"),
+                func.avg(points).label("points"),
+                func.avg(points * points).label("points_squared"),
+            )
+            .where(
+                PlayerWeeklyStat.player_uuid.in_(uuids),
+                PlayerWeeklyStat.season == season,
+                PlayerWeeklyStat.season_type == REGULAR_SEASON,
+            )
+            .group_by(PlayerWeeklyStat.player_uuid)
+        )
+    ).all()
+
+    share_rows = (
+        await session.execute(
+            select(
+                SnapCount.player_uuid,
+                func.avg(SnapCount.offense_snap_pct).label("share"),
+            )
+            .where(
+                SnapCount.player_uuid.in_(uuids),
+                SnapCount.season == season,
+                SnapCount.offense_snap_pct.isnot(None),
+            )
+            .group_by(SnapCount.player_uuid)
+        )
+    ).all()
+    share_by_uuid = {row.player_uuid: row.share for row in share_rows}
+
+    def _share(uuid: str) -> float | None:
+        raw = share_by_uuid.get(uuid)
+        if raw is None:
+            return None
+        # nflverse publishes the share as a fraction already; guard against a
+        # percentage should that ever change, rather than silently reading 85%
+        # of the snaps as 8500%.
+        value = float(raw)
+        return round(value / 100 if value > 1.5 else value, 3)
+
+    profiles: dict[str, UsageProfile] = {}
+    for row in stat_rows:
+        profiles[row.player_uuid] = UsageProfile(
+            season=season,
+            games_sampled=int(row.games) if row.games is not None else None,
+            snap_share=_share(row.player_uuid),
+            touches_per_game=round(float(row.touches), 2) if row.touches is not None else None,
+            points_per_game=round(float(row.points), 2) if row.points is not None else None,
+            points_stdev=_stdev(row.points, row.points_squared),
+        )
+    return profiles
 
 
 async def _workload(

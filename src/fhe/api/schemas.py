@@ -109,6 +109,34 @@ class WorkloadOut(ApiModel):
     touches_per_game: float | None = None
 
 
+class UsageOut(ApiModel):
+    """Measured opportunity and scoring volatility from the last played season.
+
+    Distinct from `WorkloadOut`, which serves the health model's exposure terms.
+    These answer whether a projection is corroborated, and how steady the
+    scoring behind it was. Every field is nullable because a player without a
+    measured season — a rookie, most obviously — is unknown rather than zero.
+    """
+
+    season: int | None = None
+    games_sampled: int | None = None
+    snap_share: float | None = Field(
+        default=None, description="Mean share of offensive snaps, 0-1."
+    )
+    touches_per_game: float | None = None
+    points_per_game: float | None = None
+    points_stdev: float | None = Field(
+        default=None, description="Week-to-week standard deviation of fantasy points."
+    )
+    volatility: float | None = Field(
+        default=None,
+        description=(
+            "Spread relative to the mean. Absent below a low scoring rate, where "
+            "the ratio is a denominator artefact rather than boom-or-bust."
+        ),
+    )
+
+
 class PlayerDetail(PlayerSummary):
     """Full player record for the detail drawer."""
 
@@ -122,6 +150,7 @@ class PlayerDetail(PlayerSummary):
     health: HealthOut | None = None
     injury_history: list[InjuryEventOut] = Field(default_factory=list)
     workload: WorkloadOut | None = None
+    usage: UsageOut | None = None
     projected_points: float | None = None
     market_adp: float | None = None
     adp_stdev: float | None = None

@@ -31,6 +31,7 @@ from fhe.core.types import (
     Recommendation,
     ScoringFormat,
 )
+from fhe.core.usage import UsageProfile
 from tests.conftest import make_player
 
 pytestmark = pytest.mark.unit
@@ -233,6 +234,56 @@ class TestPositionalSanity:
 
         assert by_uuid["faller"].adp_value is not None
         assert by_uuid["faller"].adp_value > 0
+
+    def test_unsupported_projections_are_discounted_never_rewarded(self) -> None:
+        """The signal exists to temper, not to inflate.
+
+        A projection already contains the value that volume produces, so paying
+        again for high usage would double-count it. Only the unsupported side
+        moves the score.
+        """
+        supported = make_player("supported", Position.RB, projected_points=250.0, adp=10.0)
+        object.__setattr__(
+            supported,
+            "usage",
+            UsageProfile(games_sampled=16, snap_share=0.90, points_per_game=16.0, points_stdev=4.0),
+        )
+        unsupported = make_player("unsupported", Position.RB, projected_points=250.0, adp=10.0)
+        object.__setattr__(
+            unsupported,
+            "usage",
+            UsageProfile(games_sampled=16, snap_share=0.20, points_per_game=5.0, points_stdev=3.0),
+        )
+        filler = [
+            make_player(f"rb{i}", Position.RB, projected_points=180.0 - i, adp=float(i + 20))
+            for i in range(30)
+        ]
+
+        recs = rank_board(build_context([supported, unsupported, *filler], league_ppr()))
+        by_uuid = {r.player_uuid: r for r in recs}
+
+        names = {c.name for c in by_uuid["supported"].components}
+        assert "unsupported_projection" not in names, "high usage must earn nothing"
+
+        discount = [
+            c for c in by_uuid["unsupported"].components if c.name == "unsupported_projection"
+        ]
+        assert discount and discount[0].points < 0
+        assert by_uuid["supported"].overall_score > by_uuid["unsupported"].overall_score
+
+    def test_a_player_with_no_measured_usage_is_not_penalised(self) -> None:
+        """A rookie has no snap share. That is unknown, not idle."""
+        rookie = make_player("rookie", Position.RB, projected_points=250.0, adp=10.0)
+        filler = [
+            make_player(f"rb{i}", Position.RB, projected_points=180.0 - i, adp=float(i + 20))
+            for i in range(30)
+        ]
+
+        recs = rank_board(build_context([rookie, *filler], league_ppr()))
+        by_uuid = {r.player_uuid: r for r in recs}
+
+        assert rookie.usage is None
+        assert not [c for c in by_uuid["rookie"].components if c.name == "unsupported_projection"]
 
 
 class TestHealthAdjustment:

@@ -15,9 +15,11 @@ from typing import Final
 
 from fhe.core.draft.engine import (
     _SAFE_MAX_RISK,
+    _SAFE_MAX_VOLATILITY,
     _SAFE_MIN_CONFIDENCE,
     _UPSIDE_MAX_AGE,
     _UPSIDE_MAX_EXPERIENCE,
+    _UPSIDE_MIN_VOLATILITY,
     PlayerRecommendation,
 )
 from fhe.core.draft.models import DraftablePlayer
@@ -83,13 +85,18 @@ def _pick_safest(
     recommendations: Sequence[PlayerRecommendation],
     players_by_uuid: dict[str, DraftablePlayer],
 ) -> PlayerRecommendation | None:
-    """Best-scoring player whose availability risk is both low and well measured.
+    """Best-scoring player who is available *and* steady, both measured.
 
-    Confidence is required as well as a low score: an unmeasured player is not
-    "safe", they are simply unknown, and presenting them as the safe pick would
-    be exactly the kind of false confidence this product exists to avoid.
+    Two things make a pick safe, and availability was only one of them. A
+    player who misses nothing but swings between three points and thirty is not
+    a safe start, so week-to-week volatility is now part of the test.
+
+    Both must be *measured*. An unmeasured player is not safe, they are
+    unknown, and presenting them here would be exactly the false confidence
+    this product exists to avoid — which is why an absent volatility excludes a
+    player from this slot rather than counting as calm.
     """
-    candidates = []
+    available: list[tuple[PlayerRecommendation, float | None]] = []
     for rec in recommendations:
         if rec.health_risk is None or rec.health_risk > _SAFE_MAX_RISK:
             continue
@@ -97,21 +104,43 @@ def _pick_safest(
         health = player.health if player else None
         if health is None or health.confidence < _SAFE_MIN_CONFIDENCE:
             continue
-        candidates.append(rec)
-    if not candidates:
+        volatility = player.usage.volatility if player and player.usage else None
+        available.append((rec, volatility))
+    if not available:
         return None
-    return max(candidates, key=lambda r: (r.overall_score, -(r.health_risk or 0.0)))
+
+    # Prefer the measured and steady. But when *nobody* has a measured
+    # volatility — no weekly stats ingested, or a synthetic pool — the signal
+    # simply is not available, and withholding the slot entirely would be
+    # withholding a useful answer over a missing input rather than a doubtful
+    # one. Degrade to availability alone, which is what this slot meant before.
+    steady = [
+        (rec, volatility)
+        for rec, volatility in available
+        if volatility is not None and volatility <= _SAFE_MAX_VOLATILITY
+    ]
+    if steady:
+        return max(steady, key=lambda pair: (pair[0].overall_score, -(pair[1] or 0.0)))[0]
+    if any(volatility is not None for _, volatility in available):
+        # Volatility *is* measured here, and nobody cleared the bar. Saying so
+        # by leaving the slot empty is more honest than promoting the least bad.
+        return None
+    return max(available, key=lambda pair: (pair[0].overall_score, -(pair[0].health_risk or 0.0)))[
+        0
+    ]
 
 
 def _pick_upside(
     recommendations: Sequence[PlayerRecommendation],
     players_by_uuid: dict[str, DraftablePlayer],
 ) -> PlayerRecommendation | None:
-    """Best young or early-career player by raw value, ignoring risk.
+    """Best young, early-career, or high-variance player by raw value.
 
-    "Upside" here means an ascending player with room to outperform their
-    projection, not a high-variance injury case. Risk is deliberately *not*
-    discounted, because that is what distinguishes this slot from ``best_pick``.
+    "Upside" means room to outperform a projection. That comes from being
+    early in a career, and it also comes from a scoring pattern with big weeks
+    in it — the same volatility that disqualifies a player from ``safest_pick``
+    is what qualifies them here. Risk is deliberately *not* discounted, because
+    that is what distinguishes this slot from ``best_pick``.
     """
     candidates = []
     for rec in recommendations:
@@ -123,7 +152,9 @@ def _pick_upside(
             player.years_experience is not None
             and player.years_experience <= _UPSIDE_MAX_EXPERIENCE
         )
-        if young or early:
+        volatility = player.usage.volatility if player.usage else None
+        swings = volatility is not None and volatility >= _UPSIDE_MIN_VOLATILITY
+        if young or early or swings:
             candidates.append(rec)
     if not candidates:
         return None

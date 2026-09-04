@@ -21,6 +21,7 @@ from fhe.api.schemas import (
     RosterSlotOut,
     ScoreComponentOut,
     TeamRosterOut,
+    UsageOut,
     WorkloadOut,
 )
 from fhe.core.draft.board import DraftAlert
@@ -72,6 +73,7 @@ def player_detail(player: DraftablePlayer, *, is_demo: bool) -> PlayerDetail:
     normalised region.
     """
     workload = player.workload
+    usage = player.usage
     return PlayerDetail(
         player_uuid=player.player_uuid,
         name=player.name,
@@ -96,6 +98,19 @@ def player_detail(player: DraftablePlayer, *, is_demo: bool) -> PlayerDetail:
                 reverse=True,
             )
         ],
+        usage=(
+            UsageOut(
+                season=usage.season,
+                games_sampled=usage.games_sampled,
+                snap_share=usage.snap_share,
+                touches_per_game=usage.touches_per_game,
+                points_per_game=usage.points_per_game,
+                points_stdev=usage.points_stdev,
+                volatility=round(usage.volatility, 2) if usage.volatility is not None else None,
+            )
+            if usage
+            else None
+        ),
         workload=(
             WorkloadOut(
                 season=workload.season,

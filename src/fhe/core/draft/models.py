@@ -12,6 +12,7 @@ from fhe.core.health.models import (
     WorkloadSummary,
 )
 from fhe.core.types import Position
+from fhe.core.usage import UsageProfile
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,6 +103,7 @@ class DraftablePlayer:
     # timeline and usage chart without a second round trip.
     injury_history: tuple[InjuryHistoryEvent, ...] = field(default=())
     workload: WorkloadSummary | None = None
+    usage: UsageProfile | None = None
     bye_week: int | None = None
     age: float | None = None
     years_experience: int | None = None

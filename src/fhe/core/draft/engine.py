@@ -70,6 +70,13 @@ W_BYE_COLLISION: Final = 4.0
 # and a large apparent ADP discount to put a defense in the first round. No
 # human drafts that way, and the model should not either.
 W_LATE_ROUND_DISCOUNT: Final = 30.0
+# Applied when a projection is not corroborated by measured opportunity.
+# Deliberately **subtract-only**: high usage earns nothing, because the value it
+# produces is already inside the projection, and paying for it twice is exactly
+# the inflation this signal exists to avoid. Low usage discounts, because the
+# projection is then resting on less evidence. Scaled by the player's own value
+# so it tempers the players it matters for and leaves the rest alone.
+W_UNSUPPORTED_PROJECTION: Final = 10.0
 
 # Positions that are only ever taken at the very end of a draft.
 LATE_ROUND_POSITIONS: Final[frozenset[Position]] = frozenset({Position.K, Position.DEF})
@@ -96,6 +103,14 @@ _DISCOUNT_HEALTH_RISK: Final = 45.0
 
 # "Safest" and "highest upside" board slots.
 _SAFE_MAX_RISK: Final = 25.0
+# Week-to-week spread, relative to the mean, above which a player is not a
+# "safe" start whatever their availability. Measured across the real pool, a
+# coefficient of variation around 0.35 separates the genuinely steady from the
+# ordinary; the league's most reliable scorers sit at or below it.
+_SAFE_MAX_VOLATILITY: Final = 0.45
+# ...and the level at which that same swinginess becomes the point rather than
+# the problem, for the upside slot.
+_UPSIDE_MIN_VOLATILITY: Final = 0.60
 _SAFE_MIN_CONFIDENCE: Final = 0.5
 _UPSIDE_MAX_AGE: Final = 25.0
 _UPSIDE_MAX_EXPERIENCE: Final = 3
@@ -268,6 +283,41 @@ def _score_player(
                         f"Market drafts him {abs(adp_value):.0f} picks {direction} "
                         f"than this model ranks him (ADP {player.adp:.1f} vs rank "
                         f"{provisional_rank})."
+                    ),
+                )
+            )
+
+    # --- opportunity corroboration -----------------------------------------
+    #
+    # Never a bonus. See W_UNSUPPORTED_PROJECTION. Skipped entirely when usage
+    # was not measured — a rookie has no snap share, and reading that as "low"
+    # would invent a risk out of missing data.
+    usage = player.usage
+    support = (
+        usage.corroboration(player.position.value, player.projected_points)
+        if usage is not None
+        else None
+    )
+    if support is not None and vorp_norm > 0 and support < 1.0:
+        share = usage.snap_share if usage is not None else None
+        # Scaled by the size of the step being asked for, not by the player's
+        # value. Scaling by VORP made the discount vanish exactly where it is
+        # most useful — the mid-round breakout bet, where a drafter is choosing
+        # between a proven role and a projected one. A back on 22% of snaps
+        # asked to double his output got -0.54.
+        points = round(-W_UNSUPPORTED_PROJECTION * (1.0 - support), 2)
+        if points <= -0.05:
+            components.append(
+                ScoreComponent(
+                    name="unsupported_projection",
+                    label="Opportunity",
+                    points=points,
+                    detail=(
+                        f"Played {share:.0%} of snaps last season and scored below "
+                        "this projection's rate, so it rests on a step up neither "
+                        "his role nor his production has shown."
+                        if share is not None
+                        else "Measured opportunity does not yet support this projection."
                     ),
                 )
             )
