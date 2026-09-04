@@ -61,7 +61,25 @@ W_SCARCITY: Final = 12.0
 # keeps the top of the board on value while letting an unfilled slot win the
 # close calls, which is what a drafter actually wants from this signal.
 W_ROSTER_NEED: Final = 20.0
-W_ADP_VALUE: Final = 15.0
+# Reduced from 15.0 after a real draft board put a rookie at ADP 41 above
+# Derrick Henry at 36, and left Ja'Marr Chase — the market's first overall pick
+# — outside the top five.
+#
+# At 15 this term saturated: `_ADP_VALUE_SCALE` maxes it out at a 24-pick
+# disagreement, so nearly every player the model liked more than the market
+# collected the full amount, and the signal stopped discriminating and simply
+# inflated. Worse, 15 is the size of the entire value-over-replacement spread
+# among the top dozen players, so disagreeing with the market counted for as
+# much as being better.
+#
+# That inverts what the two sides actually know. The model's ranking is built on
+# the same public projections everyone else has; the market's early-round
+# consensus aggregates far more than that. Measured against the real pool, the
+# mean ADP of the top ten falls from 13.0 to 8.2 as this drops from 15 to 6 —
+# the board converging on consensus where consensus is strongest, which is what
+# the first round should look like. Below 6 the faller signal stops working at
+# all, so this is the bottom of the useful range rather than a minimum.
+W_ADP_VALUE: Final = 6.0
 W_URGENCY: Final = 10.0
 W_HEALTH: Final = 20.0
 W_BYE_COLLISION: Final = 4.0

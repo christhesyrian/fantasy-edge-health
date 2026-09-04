@@ -41,13 +41,21 @@ MEANINGFUL_ROOKIE_TOUCHES: Final = 50
 RANKED_TEAMS: Final = 30
 
 # The boost for the most rookie-friendly staff, in ranking points, before it
-# decays down the order. Small on purpose — this is a tiebreaker among rookies
-# whose projections are already uncertain, not a claim about talent.
-TOP_TEAM_BOOST: Final = 6.0
+# decays down the order.
+#
+# Deliberately small, and reduced from 6.0 after a real board showed why. This
+# separates rookies *from each other*; it is not a claim that a rookie belongs
+# among established players. At the original size the maximum award rivalled the
+# whole value-over-replacement spread at the top of the board, which meant a
+# signal about the least-known players in the draft outweighed measured value —
+# exactly backwards. A first-year player is more uncertain than a proven one,
+# and the model should not be pushing him past a veteran the market ranks ahead
+# of him.
+TOP_TEAM_BOOST: Final = 2.5
 
 # Added on top when the team gave a rookie a real workload last season, which is
-# the most direct precedent available.
-RECENT_PRECEDENT_BOOST: Final = 2.5
+# the most direct precedent available. Same reasoning on size.
+RECENT_PRECEDENT_BOOST: Final = 1.0
 
 
 @dataclass(frozen=True, slots=True)

@@ -24,6 +24,7 @@ from fhe.core.draft.vorp import (
     value_over_replacement,
 )
 from fhe.core.league import LeagueSettings
+from fhe.core.rookies import RookieOpportunity
 from fhe.core.schedule import PlayoffSchedule
 from fhe.core.types import (
     DraftType,
@@ -344,6 +345,72 @@ class TestPositionalSanity:
 
         assert unknown.playoff_schedule is None
         assert not [c for c in by_uuid["unknown"].components if c.name == "playoff_schedule"]
+
+    def test_a_rookie_does_not_outrank_a_better_established_player(self) -> None:
+        """Regression: a rookie at ADP 41 ranked above Derrick Henry at 36.
+
+        Two faults compounded. The ADP-value term saturated, so nearly every
+        player the model liked more than the market collected the full amount
+        and the signal inflated instead of discriminating. And the rookie
+        landing-spot boost was large enough to rival measured value, which let a
+        signal about the least-known player in the draft outweigh a proven one.
+        """
+        veteran = make_player("veteran", Position.RB, projected_points=274.0, adp=36.0)
+        rookie = make_player("rookie", Position.RB, projected_points=255.0, adp=41.0)
+        object.__setattr__(rookie, "is_rookie", True)
+        object.__setattr__(
+            rookie,
+            "rookie_opportunity",
+            RookieOpportunity(
+                team="ARI",
+                coach="A Coach",
+                seasons_under_coach=3,
+                average_rookie_touches=96.7,
+                rank=1,
+                teams_ranked=25,
+                had_recent_workhorse=True,
+            ),
+        )
+        filler = [
+            make_player(f"rb{i}", Position.RB, projected_points=300.0 - i * 4, adp=float(i + 1))
+            for i in range(30)
+        ]
+
+        recs = rank_board(build_context([veteran, rookie, *filler], league_ppr()))
+        rank_of = {r.player_uuid: r.model_rank for r in recs}
+
+        assert rank_of["veteran"] < rank_of["rookie"], (
+            "a better player the market ranks ahead must stay ahead"
+        )
+
+    def test_a_late_adp_player_does_not_leapfrog_the_consensus_top(self) -> None:
+        """The early rounds are where the market knows most, and it should show.
+
+        The model's ranking rests on the same public projections everyone has;
+        an early-round consensus aggregates far more than that. A board whose
+        top slots hold players the market drafts three rounds later is not
+        finding value, it is disagreeing with better information.
+
+        The faller here is deliberately *slightly* worse than the consensus
+        picks, so only an over-weighted ADP term can lift him past them.
+        """
+        consensus = [
+            make_player(f"rb{i}", Position.RB, projected_points=320.0 - i * 2, adp=float(i + 1))
+            for i in range(8)
+        ]
+        # Marginally worse than the eighth-best, and drafted three rounds later.
+        faller = make_player("faller", Position.RB, projected_points=303.0, adp=40.0)
+        filler = [
+            make_player(f"depth{i}", Position.RB, projected_points=240.0 - i * 3, adp=float(i + 50))
+            for i in range(25)
+        ]
+
+        recs = rank_board(build_context([*consensus, faller, *filler], league_ppr()))
+        rank_of = {r.player_uuid: r.model_rank for r in recs}
+
+        assert rank_of["faller"] > 5, (
+            "a player the market drafts at 40 must not enter the top five on disagreement alone"
+        )
 
 
 class TestHealthAdjustment:

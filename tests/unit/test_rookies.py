@@ -57,7 +57,8 @@ class TestBoost:
         first_step = landing(rank=1).boost - landing(rank=2).boost
         later_step = landing(rank=20).boost - landing(rank=21).boost
 
-        assert first_step == pytest.approx(later_step, abs=0.01)
+        # Rounded to two decimals, so equal steps can differ by a cent.
+        assert first_step == pytest.approx(later_step, abs=0.02)
 
     def test_a_recent_workhorse_adds_on_top(self) -> None:
         """The most direct precedent available that the door is open."""
@@ -65,6 +66,26 @@ class TestBoost:
         with_precedent = landing(had_recent_workhorse=True).boost
 
         assert with_precedent > without
+
+    def test_the_boost_stays_smaller_than_measured_value(self) -> None:
+        """It separates rookies from each other, not rookies from veterans.
+
+        A first-year player is the least-known player in the draft. When the
+        maximum award here rivalled the value-over-replacement spread at the top
+        of the board, a signal about the *least* certain players outweighed
+        measured value — and a rookie at ADP 41 outranked Derrick Henry at 36.
+        """
+        from fhe.core.draft.engine import W_VORP
+
+        best_possible = landing(rank=1, had_recent_workhorse=True).boost
+
+        # An order of magnitude below the primary signal. The landing spot
+        # describes a situation, not a player, and must stay a tiebreaker
+        # beside measured value rather than competing with it. The value that
+        # caused the regression was 8.5 against this bound of 4.0.
+        assert best_possible < W_VORP / 10, (
+            "the landing spot must stay a tiebreaker beside projected value"
+        )
 
     def test_the_boost_is_never_negative(self) -> None:
         """This signal only ever moves a rookie up."""
