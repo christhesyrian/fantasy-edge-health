@@ -4,7 +4,7 @@
 decisions and their reasoning, the bugs already found, and the ordered backlog —
 so none of it has to be re-derived.
 
-- **Last updated:** 2026-08-23 (pre-v0 stabilisation pass)
+- **Last updated:** 2026-09-04 (injury-spell and scoring-format pass)
 - **Branch:** `master`, working tree clean
 - **Governing spec:** [`docs/MASTER_BUILD_DIRECTIVE.md`](docs/MASTER_BUILD_DIRECTIVE.md)
 
@@ -27,8 +27,8 @@ tracked in git, so it does not appear on GitHub.
 make quality        # format, lint, mypy, pytest, then the frontend gates
 ```
 
-Expected: **534 Python tests**, **55 frontend tests**, ruff clean,
-`mypy --strict` clean across 128 files, eslint clean, `tsc` clean. Plus
+Expected: **635 Python tests**, **55 frontend tests**, ruff clean,
+`mypy --strict` clean across 144 files, eslint clean, `tsc` clean. Plus
 **23 Playwright end-to-end tests** — `npm run e2e` (12, against a real API) and
 `npm run e2e:preview` (11, against offline preview mode with no API at all).
 
@@ -182,11 +182,45 @@ Each has a regression test named after the symptom.
 - **Light-mode contrast audit** and an automated a11y check in CI.
 - **Multi-worker support** — needs shared poller ownership, not just the shared
   event bus that already exists. `docs/DEPLOYMENT.md` §7.
+- **Picks are never persisted.** `draft_picks` is declared but nothing writes to
+  it: a live draft's picks exist only in the in-memory session and are re-fetched
+  from Sleeper on recovery. That is fine while Sleeper serves the draft, and
+  Sleeper has already 404'd one completed draft (see §3). No post-draft record
+  survives, and the table is dead schema until it does.
+- **Depth charts are not ingested.** `depth_chart_snapshots` has 0 rows, so
+  "is this player actually starting" is inferred from usage alone.
 - **Serving path for the learned model**, if it is ever promoted: a model
   registry, versioned artefacts, and drift monitoring. `docs/MODEL_CARD.md`
   records why the model is deliberately not in production.
 
 ### Done since the last handoff
+
+**Injury model — count injuries, not injury reports (2026-09-04)**
+- The archive holds one row per weekly report, so a nine-week absence arrived as
+  nine rows. The model counted rows, which inflated burden with an injury's
+  *length* and tripped the recurrence penalty on any multi-week absence: 1,389
+  of 3,245 player-season-region groups hold two or more rows. Reports are now
+  collapsed into spells in `fhe.core.health.spells` before scoring. Jayden
+  Daniels went from "arm elbow x7, knee x2" at 29.9 risk to four distinct
+  injuries at 9.5.
+- History is weighted by `BodyRegion.recurrence_class` — how well a region
+  predicts a repeat, which is the only judgement a report naming a body part can
+  support. Soft tissue counts fully, a joint that stays compromised nearly so,
+  a bone that breaks on impact and heals at 40%.
+- The **games-missed component had never fired**: nflverse ships no such column
+  and all 6,043 rows leave it null. Replaced by time lost, derived from the
+  weekly rows carrying an absent designation.
+- The drawer had the same defect independently, counting report rows in
+  TypeScript. The API now sends spells and the browser renders them.
+- Model version is `heuristic-v2`.
+
+**A half-PPR league had no board (2026-09-04)**
+- Projections and ADP were selected on an exact scoring-format match, and every
+  FantasyPros import is labelled `ppr` because the free tier ignores the scoring
+  parameter. Sleeper's default league scores 0.5 per reception, so the most
+  ordinary league on the platform connected to **0 projections and 0 ADP**. The
+  pool now falls back to the nearest stored family, one family for the whole
+  board, and declares the substitution in the provenance warnings.
 
 **Docker verification (2026-08-23)**
 - The Compose stack was built and run end to end for the first time: six
