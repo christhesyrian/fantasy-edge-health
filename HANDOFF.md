@@ -4,7 +4,7 @@
 decisions and their reasoning, the bugs already found, and the ordered backlog —
 so none of it has to be re-derived.
 
-- **Last updated:** 2026-09-04 (injury spells, scoring format, picks, depth charts)
+- **Last updated:** 2026-09-04 (injury spells, scoring format, picks, depth charts, access gate, deploy)
 - **Branch:** `master`, working tree clean
 - **Governing spec:** [`docs/MASTER_BUILD_DIRECTIVE.md`](docs/MASTER_BUILD_DIRECTIVE.md)
 
@@ -27,8 +27,8 @@ tracked in git, so it does not appear on GitHub.
 make quality        # format, lint, mypy, pytest, then the frontend gates
 ```
 
-Expected: **680 Python tests**, **55 frontend tests**, ruff clean,
-`mypy --strict` clean across 150 files, eslint clean, `tsc` clean. Plus
+Expected: **731 Python tests**, **64 frontend tests**, ruff clean,
+`mypy --strict` clean across 154 files, eslint clean, `tsc` clean. Plus
 **23 Playwright end-to-end tests** — `npm run e2e` (12, against a real API) and
 `npm run e2e:preview` (11, against offline preview mode with no API at all).
 
@@ -187,6 +187,30 @@ Each has a regression test named after the symptom.
   records why the model is deliberately not in production.
 
 ### Done since the last handoff
+
+**Shared-password gate and a deployable backend (2026-09-04)**
+- One `FHE_ACCESS_PASSWORD` in front of the whole API, as middleware rather than
+  a route dependency so a new endpoint is closed by default. Health and metrics
+  stay open, because a platform probes them before anything holds a cookie.
+- Sessions are an HttpOnly cookie, not a bearer token: the live feed is an
+  `EventSource`, which cannot set headers. Tokens are signed with a key derived
+  from the password, so they survive a restart, expire on their own, and all
+  become worthless the moment the password is rotated.
+- **Production with no password refuses to start.** Every other misconfiguration
+  here is loud; this one is silent, because the instance works perfectly while
+  serving everything to everyone.
+- Failed sign-ins are rate limited per address. The counter is process-local,
+  which is written down rather than hidden.
+- [`render.yaml`](render.yaml) declares the API, PostgreSQL and a Key Value
+  instance. Schema verified against Render's blueprint spec, which corrected
+  three guesses: `plan: starter` is not a valid plan ID, a Key Value service
+  needs an explicit `ipAllowList`, and `fromService` requires `type`.
+- **Two things would have broken the first deploy.** The container hardcoded
+  port 8000 while every platform assigns `$PORT`; `services/api/entrypoint.sh`
+  reads it and uses `exec` so uvicorn is PID 1 and gets `SIGTERM` directly —
+  verified, the lifespan cleanup runs. And every managed platform emits
+  `postgres://`, which SQLAlchemy 2 rejects outright, so `sqlalchemy_url` now
+  normalises a driverless URL and leaves an explicitly chosen driver alone.
 
 **Picks are persisted (2026-09-04)**
 - `draft_picks` had never been written to. The poller now hands every newly

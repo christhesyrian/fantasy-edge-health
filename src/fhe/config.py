@@ -183,9 +183,17 @@ class Settings(BaseSettings):
 
         The fallback keeps the demo runnable without Docker. It is not suitable
         for production, and :meth:`storage_warnings` says so.
+
+        A managed platform's own connection string is normalised rather than
+        rejected. Render, Railway, Heroku and Fly all hand out ``postgres://``,
+        which SQLAlchemy 2 removed support for entirely, and none of them names
+        a driver - so wiring a platform's variable straight in fails at startup
+        with "Can't load plugin: sqlalchemy.dialects:postgres", which reads like
+        a broken install rather than a URL scheme. An explicitly chosen driver
+        is left alone; only an absent one is filled in.
         """
         if self.database_url:
-            return self.database_url
+            return _with_async_driver(self.database_url)
         self.data_dir.mkdir(parents=True, exist_ok=True)
         return f"sqlite+aiosqlite:///{(self.data_dir / 'fhe.db').as_posix()}"
 
@@ -223,6 +231,39 @@ class Settings(BaseSettings):
                 "Set FHE_DATABASE_URL to a PostgreSQL instance."
             )
         return warnings
+
+
+def _with_async_driver(url: str) -> str:
+    """Give a database URL the async driver this application needs.
+
+    Args:
+        url: A connection string, possibly in a platform's own dialect.
+
+    Returns:
+        The same URL with an async driver named, or unchanged when one already
+        is. A scheme this does not recognise is returned untouched, so an
+        unusual but valid URL fails in SQLAlchemy with SQLAlchemy's own message
+        rather than being silently rewritten into something else.
+
+    Examples:
+        >>> _with_async_driver("postgres://u:p@host/db")
+        'postgresql+asyncpg://u:p@host/db'
+        >>> _with_async_driver("postgresql+psycopg://u:p@host/db")
+        'postgresql+psycopg://u:p@host/db'
+    """
+    scheme, separator, rest = url.partition("://")
+    if not separator:
+        return url
+    if scheme in _POSTGRES_DRIVERLESS_SCHEMES:
+        return f"postgresql+asyncpg://{rest}"
+    if scheme == "sqlite":
+        return f"sqlite+aiosqlite://{rest}"
+    return url
+
+
+# Schemes that name PostgreSQL but no driver. "postgres" is the one every
+# managed platform emits and the one SQLAlchemy 2 no longer accepts.
+_POSTGRES_DRIVERLESS_SCHEMES: frozenset[str] = frozenset({"postgres", "postgresql"})
 
 
 @lru_cache(maxsize=1)

@@ -81,6 +81,10 @@ services:
       FHE_DATABASE_URL: postgresql+asyncpg://fhe:fhe@postgres:5432/fhe
       FHE_REDIS_URL: redis://redis:6379/0
       FHE_CORS_ORIGINS: http://localhost:3000
+      # Empty by default, so local development needs no login. Set it in the
+      # shell to exercise the gate the way a deployment runs it:
+      #   FHE_ACCESS_PASSWORD=letmein docker compose up
+      FHE_ACCESS_PASSWORD: ${FHE_ACCESS_PASSWORD:-}
       FHE_S3_ENDPOINT_URL: http://minio:9000
     ports:
       - "8000:8000"

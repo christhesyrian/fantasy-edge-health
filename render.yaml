@@ -1,0 +1,97 @@
+# Render blueprint: the backend, its database, and its cache in one file.
+#
+#   render.com → New → Blueprint → point it at this repository
+#
+# Declarative on purpose. A deployment clicked together works once and is then
+# impossible to review, reproduce, or hand to anybody else. This is the record
+# of what is actually running, and it sits in the repository beside the code it
+# deploys.
+#
+# The frontend is deliberately NOT here: it is a Next.js app, and Vercel builds
+# it far better than a container will. It needs two settings, both in
+# docs/DEPLOYMENT.md §4.
+#
+# Schema verified against https://render.com/docs/blueprint-spec on 2026-09-04.
+
+services:
+  - type: web
+    name: fhe-api
+    runtime: docker
+    dockerfilePath: ./services/api/Dockerfile
+    dockerContext: .
+    region: oregon
+    # The smallest paid plan (0.5 CPU, 512 MB). `free` exists and sleeps when
+    # idle: the first request after a sleep takes tens of seconds, which is
+    # survivable on a marketing page and not survivable on the clock in the
+    # third round.
+    plan: 0.5c-512mb
+    healthCheckPath: /api/v1/health
+
+    # Runs after the build and before the new version starts taking traffic, so
+    # a release that needs a column never serves a request without it. A failure
+    # here fails the deploy and leaves the old version serving, which is the
+    # right way round.
+    preDeployCommand: alembic upgrade head
+
+    envVars:
+      - key: FHE_ENV
+        value: production
+      - key: FHE_LOG_FORMAT
+        value: json
+
+      # Render generates this once and stores it. Read it from the dashboard to
+      # share with whoever is using the instance, and rotate it from there:
+      # changing it invalidates every existing session on its own, because the
+      # key that signed them is derived from the password.
+      - key: FHE_ACCESS_PASSWORD
+        generateValue: true
+
+      # Render emits `postgres://`, which SQLAlchemy 2 does not accept and which
+      # names no driver. Settings.sqlalchemy_url normalises it rather than making
+      # this file carry a hand-built URL that would drift from the real one.
+      - key: FHE_DATABASE_URL
+        fromDatabase:
+          name: fhe-postgres
+          property: connectionString
+
+      - key: FHE_REDIS_URL
+        fromService:
+          name: fhe-keyvalue
+          type: keyvalue
+          property: connectionString
+
+      # Exact origins, never a wildcard: "*" alongside credentials is how a
+      # third-party page gets to read authenticated responses. Set this to the
+      # Vercel URL after the first frontend deploy. Until it matches exactly,
+      # every browser request is refused by CORS and the site looks broken while
+      # the API is perfectly healthy.
+      - key: FHE_CORS_ORIGINS
+        sync: false
+
+      # Optional, and think before setting it. A personal FantasyPros key must
+      # not be shared with other users of an instance — see docs/DEPLOYMENT.md.
+      - key: FHE_FANTASYPROS_API_KEY
+        sync: false
+
+  # Declared even though a single API instance does not need it. The health
+  # endpoint reports an in-process bus as a degradation, and the first time this
+  # is scaled past one instance a missing Redis would silently stop live picks
+  # reaching half the open browsers — during a draft, which is the only time
+  # anybody is looking.
+  - type: keyvalue
+    name: fhe-keyvalue
+    region: oregon
+    plan: free
+    # Empty means internal connections only. This holds draft events and nothing
+    # else, and nothing outside the Render network has any business reaching it.
+    ipAllowList: []
+    # Draft events are worthless a minute after they are delivered, so evicting
+    # the oldest under memory pressure is correct and persistence is not needed.
+    maxmemoryPolicy: allkeys-lru
+    persistenceMode: 'off'
+
+databases:
+  - name: fhe-postgres
+    region: oregon
+    plan: 0.1c-256mb
+    postgresMajorVersion: '17'

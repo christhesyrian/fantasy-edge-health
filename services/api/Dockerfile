@@ -40,6 +40,11 @@ RUN useradd --create-home --uid 10001 fhe
 COPY --from=builder /opt/venv /opt/venv
 
 WORKDIR /app
+COPY services/api/entrypoint.sh /usr/local/bin/fhe-entrypoint
+# Explicit rather than relying on the host's file mode surviving the build
+# context, which is the sort of thing that works everywhere until one checkout
+# does not track the executable bit.
+RUN chmod +x /usr/local/bin/fhe-entrypoint
 COPY --chown=fhe:fhe alembic.ini ./
 COPY --chown=fhe:fhe alembic ./alembic
 COPY --chown=fhe:fhe data/fixtures ./data/fixtures
@@ -55,8 +60,10 @@ USER fhe
 EXPOSE 8000
 
 # Liveness only: readiness is checked by the orchestrator against
-# /api/v1/health/ready, which does touch the database.
+# /api/v1/health/ready, which does touch the database. Reads $PORT for the same
+# reason the entrypoint does, or the check would probe 8000 while the server
+# listened on whatever the platform assigned and report a healthy app as dead.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4).status == 200 else 1)"
+    CMD python -c "import os,urllib.request,sys; port=os.environ.get('PORT','8000'); sys.exit(0 if urllib.request.urlopen(f'http://127.0.0.1:{port}/api/v1/health', timeout=4).status == 200 else 1)"
 
-CMD ["uvicorn", "fhe.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["fhe-entrypoint"]

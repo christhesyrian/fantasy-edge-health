@@ -97,8 +97,11 @@ compile step: the value is written into JavaScript every visitor downloads.
 | `FHE_ENV` | Yes | `production`. Drives logging and error verbosity. |
 | `FHE_LOG_FORMAT` | Yes | `json` in production, so logs are queryable. |
 | `FHE_LOG_LEVEL` | No | `INFO`. |
-| `FHE_DATABASE_URL` | **Yes in production** | `postgresql+asyncpg://…`. If unset the app falls back to a local SQLite file and *says so* on `/health` — fine for a demo, wrong for a deployment. |
+| `FHE_DATABASE_URL` | **Yes in production** | A managed platform's own connection string works as-is: Render, Railway, Heroku and Fly all emit `postgres://`, which SQLAlchemy 2 rejects and which names no driver, so it is normalised to `postgresql+asyncpg://` on read. An explicitly chosen driver is respected. If unset the app falls back to a local SQLite file and *says so* on `/health` — fine for a demo, wrong for a deployment. |
 | `FHE_REDIS_URL` | Only for >1 worker | Unset means an in-process event bus, which is correct for a single worker and broken for several. |
+| `FHE_ACCESS_PASSWORD` | **Yes in production** | The shared password. Production with this unset **refuses to start**, because an open instance fails silently: everything works while serving every draft and import to anyone with the URL. `openssl rand -base64 24` generates one. |
+| `FHE_ACCESS_SESSION_HOURS` | No | Defaults to 72. How long a signed-in browser stays signed in. |
+| `FHE_ACCESS_MAX_ATTEMPTS` / `FHE_ACCESS_LOCKOUT_MINUTES` | No | Defaults 10 and 15. Failed sign-ins per client address before a lockout. Counted per process, so several workers multiply the allowance. |
 | `FHE_CORS_ORIGINS` | Yes | Comma-separated **exact** origins, e.g. `https://app.your-domain.example`. Never `*`. |
 | `FHE_API_HOST` / `FHE_API_PORT` | Platform-dependent | Bind `0.0.0.0` inside a container. |
 | `FHE_SLEEPER_MAX_RPM` | No | Defaults to 600, under Sleeper's documented 1000/min. |
@@ -196,7 +199,55 @@ Migrations are expand-only in practice — add columns and tables, backfill,
 then remove in a later release — so an old and a new API version can run
 against the same schema during a rollout.
 
-## 9. Deployment order
+## 9. Deploying to Render, concretely
+
+[`render.yaml`](../render.yaml) declares the API, its PostgreSQL database, and a
+Key Value instance for the event bus. Schema verified against Render's blueprint
+spec on 2026-09-04.
+
+1. **Push this repository to GitHub**, if it is not there already.
+2. On Render: **New → Blueprint**, select the repository. It reads `render.yaml`
+   and offers to create three resources.
+3. It prompts for the variables marked `sync: false`. Leave `FHE_CORS_ORIGINS`
+   as a placeholder for now — the Vercel URL does not exist yet — and skip
+   `FHE_FANTASYPROS_API_KEY` unless the licence is yours to honour for every
+   user of the instance.
+4. **Read the generated password**: Render → `fhe-api` → Environment →
+   `FHE_ACCESS_PASSWORD`. That is what you give the people who should get in.
+5. Wait for the first deploy. `preDeployCommand` runs `alembic upgrade head`, so
+   the schema is created before the API takes traffic.
+6. **Seed the database** from Render → `fhe-api` → Shell, in this order. Nothing
+   works before this: the pool is empty and a live draft refuses to connect.
+
+   ```
+   fhe ingest players
+   fhe ingest injuries
+   fhe ingest workload
+   fhe ingest schedule
+   fhe ingest depth-charts
+   ```
+
+7. **Deploy the frontend to Vercel** with `NEXT_PUBLIC_API_BASE_URL` set to the
+   Render URL (`https://fhe-api-xxxx.onrender.com`, no trailing slash).
+8. **Close the loop**: set `FHE_CORS_ORIGINS` on Render to the exact Vercel
+   origin. Until these two point at each other, the browser refuses every
+   request and the site looks broken while the API is perfectly healthy.
+9. **Verify**: load the site, enter the password, start a demo draft.
+
+The container reads `$PORT`, which Render assigns, via
+[`services/api/entrypoint.sh`](../services/api/entrypoint.sh). That script uses
+`exec` so uvicorn is PID 1 and receives `SIGTERM` directly — without it a
+redeploy would kill a live poller mid-cycle instead of shutting it down through
+the lifespan.
+
+### Railway instead
+
+Railway has no blueprint file, so it is configured in its UI, but nothing else
+differs: point it at `services/api/Dockerfile`, add PostgreSQL and Redis
+plugins, set the same variables, and use `alembic upgrade head` as the
+pre-deploy command. `$PORT` and `postgres://` are both handled the same way.
+
+## 10. Deployment order
 
 Backend first, because the frontend calls it and an old frontend against a new
 backend is the safer overlap.
@@ -204,7 +255,8 @@ backend is the safer overlap.
 1. **Provision** PostgreSQL and, if running more than one worker, Redis.
 2. **Migrate**: `alembic upgrade head` as a one-shot job against the new image.
 3. **Deploy the API**, wait for `/api/v1/health/ready` to report ready with an
-   empty `degradations` array.
+   empty `degradations` array. A non-empty one names exactly what is missing —
+   an unset password, no Redis, the SQLite fallback — in plain language.
 4. **Ingest**, on a first deploy only: `fhe ingest players`, then
    `fhe ingest injuries`, then `fhe ingest workload`. Without this the database
    has no players and live drafts refuse to connect with a clear error.
@@ -212,7 +264,7 @@ backend is the safer overlap.
 6. **Verify**: load the site, start a demo draft, press `a`, confirm the feed
    indicator reads `LIVE`.
 
-## 10. Rollback
+## 11. Rollback
 
 - **Frontend**: redeploy the previous build. It is stateless, so this is
   instant and always safe.
@@ -227,7 +279,7 @@ backend is the safer overlap.
   plausibility floors mean a corrupt provider response is refused rather than
   written over good data.
 
-## 11. Local production-shaped stack
+## 12. Local production-shaped stack
 
 `docker-compose.yml` brings up PostgreSQL, Redis, MinIO, migrations, the API,
 and the web app together. It is the closest local equivalent to the topology
