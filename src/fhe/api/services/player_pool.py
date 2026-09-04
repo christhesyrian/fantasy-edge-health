@@ -23,7 +23,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import case, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fhe.core.draft.models import DraftablePlayer
@@ -163,6 +163,29 @@ async def load_player_pool(
     Returns:
         The pool, and a provenance record describing how complete it is.
     """
+    # Anyone we hold a projection or an ADP for is fantasy-relevant by
+    # definition and must survive the cut, whatever the provider thinks of
+    # their popularity. This is load-bearing rather than tidy: Sleeper gives
+    # team defences **no** popularity rank at all, so ordering by that column
+    # alone sorted all thirty-two of them past the limit and made a defence
+    # undraftable — on a board whose league requires one.
+    has_projection = (
+        exists()
+        .where(FantasyProjection.player_uuid == Player.player_uuid)
+        .where(FantasyProjection.season == season)
+    )
+    has_adp = (
+        exists()
+        .where(AdpSnapshot.player_uuid == Player.player_uuid)
+        .where(AdpSnapshot.season == season)
+    )
+    market_adp = (
+        select(func.min(AdpSnapshot.adp))
+        .where(AdpSnapshot.player_uuid == Player.player_uuid, AdpSnapshot.season == season)
+        .correlate(Player)
+        .scalar_subquery()
+    )
+
     player_rows = (
         (
             await session.execute(
@@ -171,9 +194,20 @@ async def load_player_pool(
                     Player.is_active.is_(True),
                     Player.position.in_([p.value for p in positions]),
                 )
-                # Sleeper's popularity ordering is the only ranking available before
-                # projections exist, so it decides who makes the cut.
-                .order_by(Player.popularity_rank.is_(None), Player.popularity_rank)
+                .order_by(
+                    # Fantasy-relevant first...
+                    case((or_(has_projection, has_adp), 0), else_=1),
+                    # ...then by market draft position, which is a direct
+                    # statement of who gets drafted and therefore a better
+                    # ranking than popularity wherever it exists. Sorting the
+                    # relevant tier by popularity instead still buried the
+                    # defences, since they have none: six of thirty-two
+                    # survived, in a league that needs twelve.
+                    market_adp.is_(None),
+                    market_adp,
+                    Player.popularity_rank.is_(None),
+                    Player.popularity_rank,
+                )
                 .limit(limit)
             )
         )

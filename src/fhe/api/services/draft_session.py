@@ -187,15 +187,43 @@ class DraftSessionRegistry:
         """
         existing = self._sessions.get(session_id)
         if existing is not None:
-            # Refresh state and pool, since both may have moved on, but keep the
-            # session identity that subscribers and the poller are attached to.
-            existing.state = state
+            # Refresh everything that can legitimately have moved on, but keep
+            # the session identity that subscribers and the poller are attached
+            # to. Identity is the id, not the objects hanging off it.
+            #
+            # `league` is refreshed for a specific reason: it carries
+            # `user_draft_slot`, and Sleeper assigns the draft order *after*
+            # people connect. Connecting pre-draft therefore records no seat,
+            # and reconnecting once the order exists is exactly how a user
+            # fixes that. Leaving the old league here made that reconnect a
+            # no-op, so the board could never tell whose turn it was, never
+            # showed a roster, and computed roster need for nobody.
+            existing.league = league
+            # Merged into the existing object, never rebound to a new one. A
+            # running poller was handed `session.draft_state` when it started
+            # and holds that same reference; `PollerManager.start` is idempotent
+            # so a reconnect does not rebuild it. Replacing the object here left
+            # the poller writing to a state nothing read any more, and the board
+            # frozen at whatever pick the reconnect happened to see.
+            #
+            # Safe because applying picks is idempotent — the poller relies on
+            # exactly that every cycle — and because state only moves forward:
+            # anything the poller already applied is simply seen again as a
+            # duplicate.
+            if existing.state is None:
+                existing.state = state
+            else:
+                existing.state.apply_picks(state.picks)
             existing.pool = pool
             existing.baseline = baseline
             existing.provider_status = provider_status
             existing.pool_warnings = pool_warnings
             existing.last_touched_at = utcnow()
-            log.info("live_session_refreshed", session_id=session_id)
+            log.info(
+                "live_session_refreshed",
+                session_id=session_id,
+                user_draft_slot=league.user_draft_slot,
+            )
             return existing
 
         self._evict_if_needed()

@@ -24,10 +24,26 @@ from fhe.core.draft.vorp import (
     value_over_replacement,
 )
 from fhe.core.league import LeagueSettings
-from fhe.core.types import InjuryDesignation, Position, Recommendation
+from fhe.core.types import (
+    DraftType,
+    InjuryDesignation,
+    Position,
+    Recommendation,
+    ScoringFormat,
+)
 from tests.conftest import make_player
 
 pytestmark = pytest.mark.unit
+
+
+def league_ppr() -> LeagueSettings:
+    """A conventional 12-team PPR league."""
+    return LeagueSettings.from_tokens(
+        team_count=12,
+        roster_position_tokens=["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "BN", "BN"],
+        scoring_format=ScoringFormat.PPR,
+        draft_type=DraftType.SNAKE,
+    )
 
 
 def build_context(
@@ -173,6 +189,50 @@ class TestPositionalSanity:
         assert worst.vorp is not None and worst.vorp < 0
         assert value.points < 0
         assert "below" in (value.detail or "")
+
+    def test_a_player_with_no_projection_earns_no_adp_value(self) -> None:
+        """Regression: value cannot be manufactured out of ignorance.
+
+        `adp_value` compares the market against *this model's* rank. Without a
+        projection that rank says nothing about the player, so crediting the
+        difference let a player nobody drafts until pick 460 — ranked highly
+        only because nothing was known about him — score a maximal "the market
+        undervalues him" bonus and climb the board on it.
+        """
+        league = LeagueSettings.from_tokens(
+            team_count=12,
+            roster_position_tokens=["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "BN", "BN"],
+            scoring_format=ScoringFormat.PPR,
+            draft_type=DraftType.SNAKE,
+        )
+        # Deep, undrafted, and entirely unknown to us.
+        unknown = make_player("unknown", Position.WR, projected_points=None, adp=460.0)
+        known = [
+            make_player(f"wr{i}", Position.WR, projected_points=260.0 - i * 4, adp=float(i + 1))
+            for i in range(40)
+        ]
+
+        recs = rank_board(build_context([unknown, *known], league))
+        by_uuid = {r.player_uuid: r for r in recs}
+
+        assert by_uuid["unknown"].adp_value is None
+        assert not [c for c in by_uuid["unknown"].components if c.name == "adp_value"]
+        # And he must not outrank players we actually have a valuation for.
+        assert by_uuid["unknown"].overall_score < by_uuid["wr0"].overall_score
+
+    def test_a_projected_player_still_earns_adp_value(self) -> None:
+        """The fix must not disable the signal where it is meaningful."""
+        faller = make_player("faller", Position.WR, projected_points=300.0, adp=90.0)
+        filler = [
+            make_player(f"wr{i}", Position.WR, projected_points=180.0 - i, adp=float(i + 1))
+            for i in range(40)
+        ]
+
+        recs = rank_board(build_context([faller, *filler], league_ppr()))
+        by_uuid = {r.player_uuid: r for r in recs}
+
+        assert by_uuid["faller"].adp_value is not None
+        assert by_uuid["faller"].adp_value > 0
 
 
 class TestHealthAdjustment:

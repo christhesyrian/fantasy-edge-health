@@ -231,8 +231,21 @@ def _score_player(
         )
 
     # --- ADP value (second pass only) -------------------------------------
+    #
+    # Requires a projection. `adp_value` compares the market's opinion against
+    # *this model's* rank, and without a projection that rank carries no
+    # information about the player — it is wherever roster need and scarcity
+    # happened to leave him. Crediting the difference then manufactures value
+    # out of ignorance: a player nobody drafts until pick 460, ranked third
+    # because nothing is known about him, scores +457 "market undervalues him"
+    # and climbs the board on that alone.
+    #
+    # This is the same circularity the two-pass evaluation exists to break,
+    # reappearing when one side of the comparison is empty. Missing data must
+    # lower confidence, never invent value, so the term is omitted in both
+    # directions rather than guessed at.
     adp_value: float | None = None
-    if player.adp is not None and provisional_rank is not None:
+    if player.adp is not None and provisional_rank is not None and player.has_projection:
         adp_value = round(player.adp - provisional_rank, 1)
         normalised = _clamp01(abs(adp_value) / _ADP_VALUE_SCALE)
         signed = normalised if adp_value > 0 else -normalised
