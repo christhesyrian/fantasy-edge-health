@@ -44,6 +44,7 @@ from fhe.core.draft.roster import RosterNeed
 from fhe.core.draft.scarcity import PositionScarcity
 from fhe.core.draft.survival import survival_probability, take_now_probability
 from fhe.core.draft.vorp import ReplacementBaseline, value_over_replacement
+from fhe.core.schedule import PLAYOFF_WEEKS
 from fhe.core.types import Position, Recommendation
 
 # --------------------------------------------------------------------------
@@ -77,6 +78,14 @@ W_LATE_ROUND_DISCOUNT: Final = 30.0
 # projection is then resting on less evidence. Scaled by the player's own value
 # so it tempers the players it matters for and leaves the rest alone.
 W_UNSUPPORTED_PROJECTION: Final = 10.0
+# Playoff-week matchup difficulty. Small on purpose, and the measurement says
+# why: across the real pool the difficulty ratio spans about 0.90 to 1.11, so
+# the whole spread between the best and worst draw on the board is roughly a
+# tenth of a position's scoring. Three games out of seventeen cannot be more
+# than a tiebreaker, and weighting it as though it were would be inventing a
+# signal rather than measuring one. This is deliberately the smallest weight in
+# the model.
+W_PLAYOFF_SCHEDULE: Final = 8.0
 
 # Positions that are only ever taken at the very end of a draft.
 LATE_ROUND_POSITIONS: Final[frozenset[Position]] = frozenset({Position.K, Position.DEF})
@@ -318,6 +327,32 @@ def _score_player(
                         "his role nor his production has shown."
                         if share is not None
                         else "Measured opportunity does not yet support this projection."
+                    ),
+                )
+            )
+
+    # --- fantasy-playoff schedule ------------------------------------------
+    #
+    # Unlike opportunity, this may go both ways. A projection already assumes a
+    # full season against an average opponent, so it does not contain the shape
+    # of any three particular weeks — crediting an easy playoff draw is new
+    # information, not the same information twice.
+    schedule = player.playoff_schedule
+    difficulty = schedule.difficulty if schedule is not None else None
+    if difficulty is not None:
+        points = round(W_PLAYOFF_SCHEDULE * (difficulty - 1.0), 2)
+        if abs(points) >= 0.05 and schedule is not None:
+            facing = ", ".join(schedule.opponents) or "unknown opponents"
+            direction = "gave up more" if difficulty > 1 else "gave up less"
+            components.append(
+                ScoreComponent(
+                    name="playoff_schedule",
+                    label="Playoff schedule",
+                    points=points,
+                    detail=(
+                        f"Weeks {PLAYOFF_WEEKS[0]}-{PLAYOFF_WEEKS[-1]} against {facing}, "
+                        f"who {direction} to {player.position.value}s than the average "
+                        "defence last season."
                     ),
                 )
             )

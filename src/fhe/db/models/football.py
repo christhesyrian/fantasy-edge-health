@@ -107,3 +107,35 @@ class DepthChartSnapshot(Base, TimestampMixin, ProvenanceMixin):
             "player_uuid", "season", "week", "source", name="uq_depth_chart_observation"
         ),
     )
+
+
+class ScheduledGame(Base, TimestampMixin, ProvenanceMixin):
+    """One scheduled game, used to know who a team plays and when.
+
+    Stored per game rather than per team-week so a row maps one-to-one onto the
+    provider's record and re-ingestion converges. Callers who want "team T's
+    week W opponent" derive it, which is a cheap read and keeps this table an
+    honest copy of the source.
+
+    Scores are nullable because a future season's schedule is published long
+    before any of it is played, which is exactly when a draft needs it.
+    """
+
+    __tablename__ = "scheduled_games"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    provider_game_id: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    season: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    week: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    # "REG", "POST", and the provider's other codes, kept as published.
+    game_type: Mapped[str] = mapped_column(String(8), nullable=False)
+
+    home_team: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    away_team: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    home_score: Mapped[int | None] = mapped_column(Integer)
+    away_score: Mapped[int | None] = mapped_column(Integer)
+
+    __table_args__ = (
+        UniqueConstraint("provider_game_id", "source", name="uq_scheduled_game_per_provider"),
+        Index("ix_scheduled_games_season_week", "season", "week"),
+    )

@@ -24,6 +24,7 @@ from fhe.core.draft.vorp import (
     value_over_replacement,
 )
 from fhe.core.league import LeagueSettings
+from fhe.core.schedule import PlayoffSchedule
 from fhe.core.types import (
     DraftType,
     InjuryDesignation,
@@ -284,6 +285,65 @@ class TestPositionalSanity:
 
         assert rookie.usage is None
         assert not [c for c in by_uuid["rookie"].components if c.name == "unsupported_projection"]
+
+    def test_the_playoff_schedule_moves_the_score_both_ways(self) -> None:
+        """Unlike opportunity, this may credit as well as discount.
+
+        A projection assumes a full season against an average opponent, so it
+        contains nothing about the shape of three particular weeks. Crediting
+        an easy playoff draw is new information rather than the same
+        information twice.
+        """
+        easy = make_player("easy", Position.TE, projected_points=200.0, adp=30.0)
+        object.__setattr__(
+            easy,
+            "playoff_schedule",
+            PlayoffSchedule(
+                weeks_covered=3,
+                opponents=("CIN", "PIT", "SEA"),
+                points_allowed_per_game=9.0,
+                league_average=7.5,
+            ),
+        )
+        hard = make_player("hard", Position.TE, projected_points=200.0, adp=30.0)
+        object.__setattr__(
+            hard,
+            "playoff_schedule",
+            PlayoffSchedule(
+                weeks_covered=3,
+                opponents=("GB", "LAC", "BUF"),
+                points_allowed_per_game=6.0,
+                league_average=7.5,
+            ),
+        )
+        filler = [
+            make_player(f"te{i}", Position.TE, projected_points=150.0 - i, adp=float(i + 40))
+            for i in range(20)
+        ]
+
+        recs = rank_board(build_context([easy, hard, *filler], league_ppr()))
+        by_uuid = {r.player_uuid: r for r in recs}
+
+        easy_points = [c.points for c in by_uuid["easy"].components if c.name == "playoff_schedule"]
+        hard_points = [c.points for c in by_uuid["hard"].components if c.name == "playoff_schedule"]
+
+        assert easy_points and easy_points[0] > 0
+        assert hard_points and hard_points[0] < 0
+        assert by_uuid["easy"].overall_score > by_uuid["hard"].overall_score
+
+    def test_no_schedule_means_no_adjustment(self) -> None:
+        """A player with no known playoff opponents is unknown, not average."""
+        unknown = make_player("unknown", Position.TE, projected_points=200.0, adp=30.0)
+        filler = [
+            make_player(f"te{i}", Position.TE, projected_points=150.0 - i, adp=float(i + 40))
+            for i in range(20)
+        ]
+
+        recs = rank_board(build_context([unknown, *filler], league_ppr()))
+        by_uuid = {r.player_uuid: r for r in recs}
+
+        assert unknown.playoff_schedule is None
+        assert not [c for c in by_uuid["unknown"].components if c.name == "playoff_schedule"]
 
 
 class TestHealthAdjustment:

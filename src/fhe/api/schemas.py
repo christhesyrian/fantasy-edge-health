@@ -137,6 +137,22 @@ class UsageOut(ApiModel):
     )
 
 
+class PlayoffScheduleOut(ApiModel):
+    """Fantasy-playoff matchup difficulty for this player's position."""
+
+    weeks_covered: int = 0
+    opponents: list[str] = Field(default_factory=list)
+    points_allowed_per_game: float | None = None
+    league_average: float | None = None
+    difficulty: float | None = Field(
+        default=None,
+        description=(
+            "Ratio to the league average. Above 1.0 is a favourable draw, below "
+            "1.0 a hard one. Absent when too few matchups are known."
+        ),
+    )
+
+
 class PlayerDetail(PlayerSummary):
     """Full player record for the detail drawer."""
 
@@ -151,6 +167,7 @@ class PlayerDetail(PlayerSummary):
     injury_history: list[InjuryEventOut] = Field(default_factory=list)
     workload: WorkloadOut | None = None
     usage: UsageOut | None = None
+    playoff_schedule: PlayoffScheduleOut | None = None
     projected_points: float | None = None
     market_adp: float | None = None
     adp_stdev: float | None = None

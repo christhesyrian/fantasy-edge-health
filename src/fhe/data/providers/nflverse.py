@@ -220,6 +220,22 @@ class NflverseProvider:
             force_refresh=force_refresh,
         )
 
+    async def get_schedules(self, *, force_refresh: bool = False) -> pl.DataFrame:
+        """Every scheduled game nflverse publishes, all seasons in one asset.
+
+        Not season-scoped, unlike the other readers: the release ships a single
+        `games` file covering every year, and the upcoming season appears in it
+        as soon as the league publishes the fixtures — long before any of it is
+        played. That is precisely when a draft needs it, so the caller filters
+        by season rather than this method refusing seasons it cannot know about.
+
+        Verified 2026-09-03: 7,548 games, including all 272 of the 2026 regular
+        season with scores still empty.
+        """
+        return await self._read_parquet(
+            NflverseAsset("schedules", "games.parquet"), force_refresh=force_refresh
+        )
+
     async def get_depth_charts(self, season: int, *, force_refresh: bool = False) -> pl.DataFrame:
         """Weekly depth charts for a season."""
         self._require_season(season, DEPTH_CHART_SEASONS, "depth_charts")

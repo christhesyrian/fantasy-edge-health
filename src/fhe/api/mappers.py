@@ -15,6 +15,7 @@ from fhe.api.schemas import (
     LeagueSettingsOut,
     PlayerDetail,
     PlayerSummary,
+    PlayoffScheduleOut,
     PositionScarcityOut,
     RecommendationOut,
     RiskComponentOut,
@@ -74,6 +75,7 @@ def player_detail(player: DraftablePlayer, *, is_demo: bool) -> PlayerDetail:
     """
     workload = player.workload
     usage = player.usage
+    playoff = player.playoff_schedule
     return PlayerDetail(
         player_uuid=player.player_uuid,
         name=player.name,
@@ -98,6 +100,17 @@ def player_detail(player: DraftablePlayer, *, is_demo: bool) -> PlayerDetail:
                 reverse=True,
             )
         ],
+        playoff_schedule=(
+            PlayoffScheduleOut(
+                weeks_covered=playoff.weeks_covered,
+                opponents=list(playoff.opponents),
+                points_allowed_per_game=playoff.points_allowed_per_game,
+                league_average=playoff.league_average,
+                difficulty=round(playoff.difficulty, 3) if playoff.difficulty is not None else None,
+            )
+            if playoff
+            else None
+        ),
         usage=(
             UsageOut(
                 season=usage.season,

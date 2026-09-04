@@ -123,6 +123,31 @@ fix is one glance rather than a guess.
 
 ---
 
+## nflverse — schedules
+
+Added for fantasy-playoff strength of schedule.
+
+| | |
+| --- | --- |
+| **Asset** | `schedules/games.parquet` (a CSV twin exists at the same tag) |
+| **Verified** | 2026-09-03: 7,548 games, including all 272 of the 2026 regular season |
+| **Adapter** | `NflverseProvider.get_schedules` |
+| **Ingestion** | `fhe ingest schedule --seasons 2025,2026` |
+
+Not season-scoped, unlike every other nflverse reader here: the release ships
+one file covering every year, and the upcoming season appears in it as soon as
+the league publishes fixtures — with scores still null, which is exactly the
+state a draft needs.
+
+**The other half needs no provider at all.** Defensive strength is measured from
+this system's own `player_weekly_stats`, because every stat line records the
+opponent it was produced against. "Points allowed to running backs" is therefore
+a `GROUP BY` over data already ingested, not a new source to verify. Measured
+per position rather than overall, since a defence can be stingy against the run
+and generous to receivers.
+
+---
+
 ## Sleeper
 
 | | |

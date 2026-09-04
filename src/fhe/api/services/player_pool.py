@@ -35,6 +35,7 @@ from fhe.core.health import (
     score_health,
 )
 from fhe.core.injury import normalize_practice_status
+from fhe.core.schedule import PLAYOFF_WEEKS, PlayoffSchedule
 from fhe.core.types import (
     BodyRegion,
     InjuryDesignation,
@@ -44,7 +45,7 @@ from fhe.core.types import (
 from fhe.core.usage import UsageProfile
 from fhe.db.base import SEASON_LONG_WEEK
 from fhe.db.models.fantasy import AdpSnapshot, FantasyProjection
-from fhe.db.models.football import PlayerWeeklyStat, SnapCount
+from fhe.db.models.football import PlayerWeeklyStat, ScheduledGame, SnapCount
 from fhe.db.models.health import CurrentPlayerHealth, InjuryEvent
 from fhe.db.models.player import Player
 from fhe.observability import get_logger
@@ -231,6 +232,7 @@ async def load_player_pool(
     workloads = await _workload(session, uuids, season - 1)
     # Same season as workload: the most recent one actually played.
     usage = await _usage(session, uuids, season - 1, scoring_format)
+    playoff = await _playoff_schedule(session, season, scoring_format)
 
     pool: list[DraftablePlayer] = []
     for player in player_rows:
@@ -281,6 +283,9 @@ async def load_player_pool(
                 injury_history=events,
                 workload=workloads.get(uuid),
                 usage=usage.get(uuid),
+                playoff_schedule=(
+                    playoff.get(f"{player.team.upper()}:{position.value}") if player.team else None
+                ),
                 bye_week=None,
                 age=player.age,
                 years_experience=player.years_experience,
@@ -379,6 +384,94 @@ _POINTS_COLUMN = {
     ScoringFormat.HALF_PPR: PlayerWeeklyStat.fantasy_points_half_ppr,
     ScoringFormat.STANDARD: PlayerWeeklyStat.fantasy_points_standard,
 }
+
+
+async def _playoff_schedule(
+    session: AsyncSession, season: int, scoring_format: ScoringFormat
+) -> dict[str, PlayoffSchedule]:
+    """Playoff-week matchup difficulty per team and position.
+
+    Two halves, both from data this system already holds. Defensive strength
+    comes from its *own* weekly stats — every stat line records the opponent it
+    was produced against, so "points allowed to running backs" is a group-by,
+    not a new provider. The fixtures come from the ingested schedule.
+
+    Keyed by ``"TEAM:POS"`` because difficulty is a property of the pairing: the
+    same defence can be brutal against the run and generous to receivers.
+    """
+    points = _POINTS_COLUMN[scoring_format]
+
+    # What each defence allowed to each position, per game, last season.
+    allowed_rows = (
+        await session.execute(
+            select(
+                PlayerWeeklyStat.opponent.label("defence"),
+                Player.position.label("position"),
+                func.avg(points).label("allowed"),
+                func.count().label("games"),
+            )
+            .join(Player, Player.player_uuid == PlayerWeeklyStat.player_uuid)
+            .where(
+                PlayerWeeklyStat.season == season - 1,
+                PlayerWeeklyStat.season_type == REGULAR_SEASON,
+                PlayerWeeklyStat.opponent.isnot(None),
+            )
+            .group_by(PlayerWeeklyStat.opponent, Player.position)
+        )
+    ).all()
+    if not allowed_rows:
+        return {}
+
+    allowed: dict[tuple[str, str], float] = {
+        (str(row.defence).upper(), str(row.position)): float(row.allowed)
+        for row in allowed_rows
+        if row.allowed is not None
+    }
+    by_position: dict[str, list[float]] = defaultdict(list)
+    for (_, position), value in allowed.items():
+        by_position[position].append(value)
+    league_average: dict[str, float] = {
+        position: sum(values) / len(values) for position, values in by_position.items() if values
+    }
+
+    # Who each team plays in the fantasy playoff weeks.
+    fixtures = (
+        await session.execute(
+            select(
+                ScheduledGame.week,
+                ScheduledGame.home_team,
+                ScheduledGame.away_team,
+            ).where(
+                ScheduledGame.season == season,
+                ScheduledGame.game_type == "REG",
+                ScheduledGame.week.in_(PLAYOFF_WEEKS),
+            )
+        )
+    ).all()
+
+    opponents: dict[str, list[tuple[int, str]]] = defaultdict(list)
+    for row in fixtures:
+        opponents[str(row.home_team).upper()].append((int(row.week), str(row.away_team).upper()))
+        opponents[str(row.away_team).upper()].append((int(row.week), str(row.home_team).upper()))
+
+    schedules: dict[str, PlayoffSchedule] = {}
+    for team, weeks in opponents.items():
+        ordered = sorted(weeks)
+        for position, average in league_average.items():
+            faced = [
+                allowed[(opponent, position)]
+                for _, opponent in ordered
+                if (opponent, position) in allowed
+            ]
+            if not faced:
+                continue
+            schedules[f"{team}:{position}"] = PlayoffSchedule(
+                weeks_covered=len(faced),
+                opponents=tuple(opponent for _, opponent in ordered),
+                points_allowed_per_game=round(sum(faced) / len(faced), 2),
+                league_average=round(average, 2),
+            )
+    return schedules
 
 
 def _stdev(mean: float | None, mean_of_squares: float | None) -> float | None:
