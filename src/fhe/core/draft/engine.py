@@ -51,7 +51,15 @@ from fhe.core.types import Position, Recommendation
 # --------------------------------------------------------------------------
 W_VORP: Final = 40.0
 W_SCARCITY: Final = 12.0
-W_ROSTER_NEED: Final = 12.0
+# Raised from 12.0 after measuring it against a real 600-player pool. At 12 an
+# unfilled starting slot barely steered the board: with two backs and two
+# receivers already drafted, the top ten still held five more backs while
+# quarterback and tight end sat at full need. Sweeping the weight on that same
+# pool: 12 → five RB, 18 → four, 24 → three, 30 → a tight-end wall of six. So
+# the useful range is 18-24 and 30 is over-corrected. 20 sits inside it and
+# keeps the top of the board on value while letting an unfilled slot win the
+# close calls, which is what a drafter actually wants from this signal.
+W_ROSTER_NEED: Final = 20.0
 W_ADP_VALUE: Final = 15.0
 W_URGENCY: Final = 10.0
 W_HEALTH: Final = 20.0

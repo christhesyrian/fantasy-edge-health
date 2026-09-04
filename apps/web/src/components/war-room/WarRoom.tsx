@@ -43,6 +43,8 @@ const FILTER_COMMANDS: { key: Filter; label: string }[] = [
   { key: "RB", label: "Show running backs" },
   { key: "WR", label: "Show wide receivers" },
   { key: "TE", label: "Show tight ends" },
+  { key: "K", label: "Show kickers" },
+  { key: "DEF", label: "Show defences" },
   { key: "FLEX", label: "Show flex-eligible players" },
   { key: "VALUE", label: "Show value picks" },
   { key: "HEALTHY", label: "Show healthy players" },

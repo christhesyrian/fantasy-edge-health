@@ -9,7 +9,17 @@ import { num, pct, signed } from "@/lib/format";
 import type { Recommendation } from "@/lib/types";
 
 type Filter =
-  "ALL" | "QB" | "RB" | "WR" | "TE" | "FLEX" | "VALUE" | "HEALTHY" | "FAVOURITES";
+  | "ALL"
+  | "QB"
+  | "RB"
+  | "WR"
+  | "TE"
+  | "K"
+  | "DEF"
+  | "FLEX"
+  | "VALUE"
+  | "HEALTHY"
+  | "FAVOURITES";
 
 const FILTERS: { key: Filter; label: string; hint: string }[] = [
   { key: "ALL", label: "All", hint: "Every available player" },
@@ -17,6 +27,8 @@ const FILTERS: { key: Filter; label: string; hint: string }[] = [
   { key: "RB", label: "RB", hint: "Running backs" },
   { key: "WR", label: "WR", hint: "Wide receivers" },
   { key: "TE", label: "TE", hint: "Tight ends" },
+  { key: "K", label: "K", hint: "Kickers" },
+  { key: "DEF", label: "DST", hint: "Defences and special teams" },
   { key: "FLEX", label: "Flex", hint: "RB, WR and TE" },
   { key: "VALUE", label: "Value", hint: "Falling past their ADP" },
   { key: "HEALTHY", label: "Healthy", hint: "Low measured availability risk" },
@@ -62,6 +74,45 @@ function matches(
  * comparing twenty players on six numbers, and cards make that comparison
  * impossible.
  */
+/**
+ * How the board is ordered.
+ *
+ * `RANK` is the engine's own answer and stays the default — it is the product's
+ * opinion, and everything else is a lens on it. The others re-sort rows the API
+ * already returned, which is presentation rather than computation: no value is
+ * derived here, only the order they appear in.
+ */
+export type SortKey = "RANK" | "PROJ" | "ADP" | "SCORE" | "RISK";
+
+const SORT_LABEL: Record<SortKey, string> = {
+  RANK: "engine rank",
+  PROJ: "projected points",
+  ADP: "market ADP",
+  SCORE: "score",
+  RISK: "availability risk",
+};
+
+/** Ascending for ADP and risk (lower is better), descending for the rest. */
+function compare(a: Recommendation, b: Recommendation, key: SortKey): number {
+  const missingLast = (value: number | null | undefined, ascending: boolean) =>
+    value === null || value === undefined ? (ascending ? Infinity : -Infinity) : value;
+  switch (key) {
+    case "PROJ":
+      return (
+        missingLast(b.projected_points, false) - missingLast(a.projected_points, false)
+      );
+    case "SCORE":
+      return b.overall_score - a.overall_score;
+    case "ADP":
+      return missingLast(a.market_adp, true) - missingLast(b.market_adp, true);
+    case "RISK":
+      return missingLast(a.health_risk, true) - missingLast(b.health_risk, true);
+    case "RANK":
+    default:
+      return a.model_rank - b.model_rank;
+  }
+}
+
 export type { Filter };
 
 export function BestAvailable({
@@ -103,6 +154,15 @@ export function BestAvailable({
           (row.team ?? "").toLowerCase().includes(needle)),
     );
   }, [rows, filter, query, favourites]);
+
+  // The engine's order is the default; a click on a column header re-sorts the
+  // rows it already returned.
+  const [sort, setSort] = useState<SortKey>("RANK");
+  const ordered = useMemo(
+    () =>
+      sort === "RANK" ? visible : [...visible].sort((a, b) => compare(a, b, sort)),
+    [visible, sort],
+  );
 
   // Reveal whatever is selected. The palette and the arrow keys can both land on
   // a player far down a hundred-row table, and a selection you cannot see reads
@@ -148,30 +208,56 @@ export function BestAvailable({
           <thead className="sticky top-0 z-10 bg-[var(--surface-panel)]">
             <tr className="border-b">
               {[
-                { label: "#", align: "text-right w-[2.2rem]" },
-                { label: "Player", align: "text-left" },
-                { label: "Pos", align: "text-left w-[2.4rem]" },
-                { label: "Score", align: "text-right w-[3.1rem]" },
-                { label: "Proj", align: "text-right w-[2.8rem]" },
-                { label: "ADP", align: "text-right w-[2.6rem]" },
-                { label: "Val", align: "text-right w-[2.6rem]" },
-                { label: "Risk", align: "text-left w-[3.6rem]" },
-                { label: "Surv", align: "text-right w-[2.9rem]" },
-                { label: "Call", align: "text-left w-[3.1rem]" },
-                { label: "", align: "w-[4.2rem]" },
+                { label: "#", align: "text-right w-[2.2rem]", sort: "RANK" as const },
+                { label: "Player", align: "text-left", sort: null },
+                { label: "Pos", align: "text-left w-[2.4rem]", sort: null },
+                {
+                  label: "Score",
+                  align: "text-right w-[3.1rem]",
+                  sort: "SCORE" as const,
+                },
+                {
+                  label: "Proj",
+                  align: "text-right w-[2.8rem]",
+                  sort: "PROJ" as const,
+                },
+                { label: "ADP", align: "text-right w-[2.6rem]", sort: "ADP" as const },
+                { label: "Val", align: "text-right w-[2.6rem]", sort: null },
+                { label: "Risk", align: "text-left w-[3.6rem]", sort: "RISK" as const },
+                { label: "Surv", align: "text-right w-[2.9rem]", sort: null },
+                { label: "Call", align: "text-left w-[3.1rem]", sort: null },
+                { label: "", align: "w-[4.2rem]", sort: null },
               ].map((column) => (
                 <th
                   key={column.label}
                   scope="col"
+                  aria-sort={
+                    column.sort && sort === column.sort ? "descending" : undefined
+                  }
                   className={cn("rail-label px-1.5 py-1.5", column.align)}
                 >
-                  {column.label}
+                  {column.sort ? (
+                    <button
+                      type="button"
+                      onClick={() => setSort(column.sort)}
+                      title={`Sort by ${SORT_LABEL[column.sort]}`}
+                      className={cn(
+                        "rail-label transition-colors hover:text-[var(--accent)]",
+                        sort === column.sort && "text-[var(--accent)]",
+                      )}
+                    >
+                      {column.label}
+                      {sort === column.sort ? " ▾" : ""}
+                    </button>
+                  ) : (
+                    column.label
+                  )}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {visible.map((row, index) => {
+            {ordered.map((row, index) => {
               const verdict = VERDICT_ABBREV[row.recommendation];
               const isSelected = row.player_uuid === selectedUuid;
               const isComparing = comparing.includes(row.player_uuid);
@@ -325,7 +411,7 @@ export function BestAvailable({
                 </tr>
               );
             })}
-            {visible.length === 0 ? (
+            {ordered.length === 0 ? (
               <tr>
                 <td
                   colSpan={11}

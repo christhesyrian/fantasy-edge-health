@@ -14,6 +14,8 @@ from typing import Any
 import httpx
 import pytest
 
+from fhe.api.services.board_builder import MIN_PER_POSITION
+from fhe.core.types import Position
 from tests.api.conftest import LiveServer
 
 pytestmark = pytest.mark.integration
@@ -98,11 +100,36 @@ class TestBoard:
         for key in ("best_pick", "safest_pick", "highest_upside", "best_value"):
             assert board[key] is not None, key
 
-    async def test_depth_limits_the_payload(
+    async def test_depth_limits_the_ranked_payload(
         self, client: httpx.AsyncClient, simulation: str
     ) -> None:
+        """`depth` bounds the ranked head, and the payload stays bounded overall.
+
+        It is no longer an exact row count: the board also carries a floor of
+        each roster-eligible position, because the client filters what it was
+        sent and a position that ranks below the cut would otherwise make its
+        filter show an empty table. The guarantee is that the *ranked* portion
+        is `depth`, and the extra is bounded by the number of positions.
+        """
         board = (await client.get(f"/api/v1/drafts/{simulation}/board?depth=5")).json()
-        assert len(board["recommendations"]) == 5
+        rows = board["recommendations"]
+
+        assert [r["model_rank"] for r in rows[:5]] == [1, 2, 3, 4, 5]
+        assert len(rows) <= 5 + MIN_PER_POSITION * len(Position)
+
+    async def test_every_roster_position_reaches_the_board(
+        self, client: httpx.AsyncClient, simulation: str
+    ) -> None:
+        """Regression: selecting DST showed an empty table.
+
+        The late-round discount deliberately sinks kickers and defences, so a
+        board cut at a rank depth contained none of either — on a league that
+        requires one of each.
+        """
+        board = (await client.get(f"/api/v1/drafts/{simulation}/board?depth=40")).json()
+        positions = {r["position"] for r in board["recommendations"]}
+
+        assert {"QB", "RB", "WR", "TE", "K", "DEF"} <= positions
 
     async def test_kickers_are_not_recommended_in_round_one(
         self, client: httpx.AsyncClient, simulation: str

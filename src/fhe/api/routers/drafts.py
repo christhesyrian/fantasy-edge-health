@@ -132,7 +132,11 @@ async def get_board(
         default=DEFAULT_BOARD_DEPTH,
         ge=1,
         le=500,
-        description="How many ranked players to return.",
+        description=(
+            "How many ranked players to return. The board additionally carries a "
+            "floor of each roster-eligible position, so a position that ranks "
+            "below this cut still reaches a client that filters by position."
+        ),
     ),
 ) -> DraftBoardOut:
     """The complete war-room view.
