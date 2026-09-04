@@ -94,6 +94,9 @@ class PoolProvenance:
     adp_sources: tuple[str, ...] = field(default=())
     projection_observed_at: datetime | None = None
     adp_observed_at: datetime | None = None
+    # Set when the league's own scoring family had no rows and a neighbouring
+    # one was read instead. None means the values match the league exactly.
+    substituted_scoring_format: ScoringFormat | None = None
 
     @property
     def has_projections(self) -> bool:
@@ -116,6 +119,13 @@ class PoolProvenance:
         if not self.with_adp:
             issues.append(
                 "No ADP imported. Next-pick survival probability and ADP value cannot be computed."
+            )
+        if self.substituted_scoring_format is not None:
+            issues.append(
+                "No values are stored for this league's scoring format, so the "
+                f"board is ranked on {self.substituted_scoring_format.value.replace('_', '-')} "
+                "numbers instead. Receptions are worth a different amount in your "
+                "league, which mostly moves pass-catching backs and receivers."
             )
         if self.with_health == 0:
             # Coverage is *expected* to be low: a health row is only written
@@ -230,8 +240,8 @@ async def load_player_pool(
 
     uuids = [player.player_uuid for player in player_rows]
 
-    projections = await _latest_projections(session, uuids, season, scoring_format)
-    adp = await _latest_adp(session, uuids, season, scoring_format)
+    projections, projection_swap = await _latest_projections(session, uuids, season, scoring_format)
+    adp, adp_swap = await _latest_adp(session, uuids, season, scoring_format)
     health_rows = await _current_health(session, uuids)
     history = await _injury_history(session, uuids, season)
     # Workload describes the season just played, not the one being drafted for.
@@ -318,6 +328,7 @@ async def load_player_pool(
             (p.observed_at for p in projections.values() if p.observed_at), default=None
         ),
         adp_observed_at=max((a.snapshot_date for a in adp.values()), default=None),
+        substituted_scoring_format=projection_swap or adp_swap,
     )
 
     log.info(
@@ -328,6 +339,12 @@ async def load_player_pool(
         with_adp=provenance.with_adp,
         with_health=provenance.with_health,
         with_workload=provenance.with_workload,
+        wanted_scoring_format=scoring_format.value,
+        substituted_scoring_format=(
+            provenance.substituted_scoring_format.value
+            if provenance.substituted_scoring_format
+            else None
+        ),
     )
     return tuple(pool), provenance
 
@@ -337,11 +354,14 @@ async def _latest_projections(
     uuids: list[str],
     season: int,
     scoring_format: ScoringFormat,
-) -> dict[str, FantasyProjection]:
+) -> tuple[dict[str, FantasyProjection], ScoringFormat | None]:
     """Most recently ingested season-long projection per player.
 
     Ordered ascending by ingestion time so the dict comprehension keeps the
     newest; several providers can coexist for one player, and the freshest wins.
+
+    Returns the projections and, when the league's own scoring family had none
+    stored, the family read instead.
     """
     rows = (
         (
@@ -351,7 +371,6 @@ async def _latest_projections(
                     FantasyProjection.player_uuid.in_(uuids),
                     FantasyProjection.season == season,
                     FantasyProjection.week == SEASON_LONG_WEEK,
-                    FantasyProjection.scoring_format == scoring_format.value,
                 )
                 .order_by(FantasyProjection.ingested_at)
             )
@@ -359,7 +378,13 @@ async def _latest_projections(
         .scalars()
         .all()
     )
-    return {row.player_uuid: row for row in rows}
+    chosen, substituted = _resolve_scoring_format(
+        {row.scoring_format for row in rows}, scoring_format
+    )
+    return (
+        {row.player_uuid: row for row in rows if row.scoring_format == chosen.value},
+        chosen if substituted else None,
+    )
 
 
 async def _latest_adp(
@@ -367,11 +392,14 @@ async def _latest_adp(
     uuids: list[str],
     season: int,
     scoring_format: ScoringFormat,
-) -> dict[str, AdpSnapshot]:
+) -> tuple[dict[str, AdpSnapshot], ScoringFormat | None]:
     """Most recent ADP snapshot per player.
 
     ADP is a time series precisely because it moves daily, so the newest
     snapshot is the only one worth ranking against.
+
+    Returns the snapshots and, when the league's own scoring family had none
+    stored, the family read instead.
     """
     rows = (
         (
@@ -380,7 +408,6 @@ async def _latest_adp(
                 .where(
                     AdpSnapshot.player_uuid.in_(uuids),
                     AdpSnapshot.season == season,
-                    AdpSnapshot.scoring_format == scoring_format.value,
                 )
                 .order_by(AdpSnapshot.snapshot_date)
             )
@@ -388,7 +415,47 @@ async def _latest_adp(
         .scalars()
         .all()
     )
-    return {row.player_uuid: row for row in rows}
+    chosen, substituted = _resolve_scoring_format(
+        {row.scoring_format for row in rows}, scoring_format
+    )
+    return (
+        {row.player_uuid: row for row in rows if row.scoring_format == chosen.value},
+        chosen if substituted else None,
+    )
+
+
+# Scoring families to fall back on, best first, when a league's own family has
+# no stored values. Half-PPR sits between the other two, so either neighbour is
+# one step away and the more widely published one is preferred; PPR and standard
+# both step to half-PPR first because it is the nearer of the two.
+#
+# This exists because a Sleeper league scoring 0.5 per reception - Sleeper's own
+# default, and so the shape most leagues take - found no rows at all: every
+# FantasyPros import is labelled "ppr", since the free tier ignores the scoring
+# parameter entirely. The board came up with no projections and no ADP.
+_SCORING_FALLBACKS: dict[ScoringFormat, tuple[ScoringFormat, ...]] = {
+    ScoringFormat.HALF_PPR: (ScoringFormat.PPR, ScoringFormat.STANDARD),
+    ScoringFormat.PPR: (ScoringFormat.HALF_PPR, ScoringFormat.STANDARD),
+    ScoringFormat.STANDARD: (ScoringFormat.HALF_PPR, ScoringFormat.PPR),
+}
+
+
+def _resolve_scoring_format(
+    available: set[str], wanted: ScoringFormat
+) -> tuple[ScoringFormat, bool]:
+    """Pick which stored scoring family to read, and say whether it was a swap.
+
+    The whole pool reads one family. Filling the gaps player by player would
+    rank some players on PPR points and others on standard, which is not a
+    board at all - the ordering it produced would correspond to no league that
+    exists.
+    """
+    if wanted.value in available:
+        return wanted, False
+    for candidate in _SCORING_FALLBACKS[wanted]:
+        if candidate.value in available:
+            return candidate, True
+    return wanted, False
 
 
 # Which weekly fantasy-points column each scoring family reads.

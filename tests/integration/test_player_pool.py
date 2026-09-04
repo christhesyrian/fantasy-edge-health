@@ -220,8 +220,50 @@ class TestPoolAssembly:
         pool, _ = await load(seeded)
         assert [p.player_uuid for p in pool] == ["u-elite", "u-hurt", "u-bare"]
 
-    async def test_scoring_format_selects_the_right_values(self, seeded: Any) -> None:
-        """A half-PPR league must not silently pick up PPR projections."""
+    async def test_a_leagues_own_scoring_format_wins_when_it_exists(
+        self, session_factory: Any
+    ) -> None:
+        """Never reach for a neighbour while the league's own values are there."""
+        async with session_factory() as session:
+            session.add(player("u-elite", "Elite Back", "RB", popularity_rank=1))
+            for fmt, points in (("ppr", 310.5), ("half_ppr", 288.0)):
+                session.add(
+                    FantasyProjection(
+                        player_uuid="u-elite",
+                        season=SEASON,
+                        week=SEASON_LONG_WEEK,
+                        scoring_format=fmt,
+                        projected_points=points,
+                        source="my_projections",
+                        ingested_at=NOW,
+                        observed_at=NOW,
+                    )
+                )
+            await session.commit()
+
+        async with session_factory() as session:
+            pool, provenance = await load_player_pool(
+                session,
+                season=SEASON,
+                scoring_format=ScoringFormat.HALF_PPR,
+                as_of=AS_OF,
+            )
+        assert pool[0].projected_points == 288.0
+        assert provenance.substituted_scoring_format is None
+        assert not any("scoring format" in w for w in provenance.warnings)
+
+    async def test_a_missing_scoring_format_borrows_its_neighbour_and_says_so(
+        self, seeded: Any
+    ) -> None:
+        """The failure this replaced was an empty board, not a wrong one.
+
+        Sleeper's default league scores half a point per reception, and every
+        FantasyPros import is labelled PPR because the free tier ignores the
+        scoring parameter. Demanding an exact match meant the most ordinary
+        league on the platform connected to no projections and no ADP at all.
+        Ranking on the neighbouring family is imperfect and must be declared;
+        having nothing to rank on is worse.
+        """
         async with seeded() as session:
             pool, provenance = await load_player_pool(
                 session,
@@ -229,8 +271,63 @@ class TestPoolAssembly:
                 scoring_format=ScoringFormat.HALF_PPR,
                 as_of=AS_OF,
             )
-        assert provenance.with_projection == 0
-        assert all(p.projected_points is None for p in pool)
+        assert provenance.with_projection == 2
+        assert provenance.with_adp == 2
+        assert provenance.substituted_scoring_format is ScoringFormat.PPR
+        assert any("ranked on ppr numbers" in w for w in provenance.warnings)
+        assert pool[0].projected_points == 310.5
+
+    async def test_the_board_never_mixes_scoring_formats(self, session_factory: Any) -> None:
+        """One family for the whole pool, or the ordering means nothing.
+
+        Filling per-player gaps from whatever format happened to exist would
+        rank some players on PPR points and others on standard, producing an
+        order that corresponds to no league anywhere.
+        """
+        async with session_factory() as session:
+            session.add_all(
+                [
+                    player("u-elite", "Elite Back", "RB", popularity_rank=1),
+                    player("u-other", "Other Back", "RB", popularity_rank=2),
+                ]
+            )
+            session.add_all(
+                [
+                    FantasyProjection(
+                        player_uuid="u-elite",
+                        season=SEASON,
+                        week=SEASON_LONG_WEEK,
+                        scoring_format="ppr",
+                        projected_points=310.5,
+                        source="my_projections",
+                        ingested_at=NOW,
+                        observed_at=NOW,
+                    ),
+                    FantasyProjection(
+                        player_uuid="u-other",
+                        season=SEASON,
+                        week=SEASON_LONG_WEEK,
+                        scoring_format="standard",
+                        projected_points=260.0,
+                        source="my_projections",
+                        ingested_at=NOW,
+                        observed_at=NOW,
+                    ),
+                ]
+            )
+            await session.commit()
+
+        async with session_factory() as session:
+            pool, provenance = await load_player_pool(
+                session,
+                season=SEASON,
+                scoring_format=ScoringFormat.HALF_PPR,
+                as_of=AS_OF,
+            )
+        assert provenance.with_projection == 1
+        by_uuid = {p.player_uuid: p for p in pool}
+        assert by_uuid["u-elite"].projected_points == 310.5
+        assert by_uuid["u-other"].projected_points is None
 
 
 class TestProvenance:
