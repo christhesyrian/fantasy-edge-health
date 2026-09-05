@@ -36,6 +36,7 @@ the other would silently wipe the board.
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -57,6 +58,25 @@ from fhe.observability import get_logger
 log = get_logger(__name__)
 
 PROVIDER_NAME: Final = "sleeper"
+
+# Query parameter appended to make a request unique, so Cloudflare treats it as
+# a resource it has never seen and fetches from Sleeper's origin.
+#
+# This is not an optimisation, it is the difference between a live board and a
+# useless one. Sleeper serves `/draft/{id}/picks` through Cloudflare with
+# `cache-control: public, s-maxage=86400`, and measurement on 2026-09-05 found
+# plain requests returning `cf-cache-status: HIT` with `age: 6460` - picks
+# nearly two hours stale, identical however fast they were repeated. A request
+# carrying a unique parameter returned `MISS` every time. A `cache-control:
+# no-cache` request header is ignored, as it generally is for a `public`
+# response.
+#
+# Deliberately limited to the two live-draft endpoints. It must never be used
+# for `/players/nfl`, which is 14.6 MB and cached locally for twenty hours on
+# purpose: bypassing the edge there would be pure cost to Sleeper for data that
+# changes daily.
+_CACHE_BUSTER_PARAM: Final = "_fhe"
+
 
 # The full player payload is large and slow-changing; the provider documentation
 # explicitly asks callers not to fetch it more than once a day.
@@ -261,7 +281,14 @@ class SleeperProvider:
 
     # ------------------------------------------------------------------- core
 
-    async def _get(self, path: str, operation: str, *, allow_missing: bool = False) -> Any:
+    async def _get(
+        self,
+        path: str,
+        operation: str,
+        *,
+        allow_missing: bool = False,
+        bypass_edge_cache: bool = False,
+    ) -> Any:
         """Perform a rate-limited, retried GET returning decoded JSON.
 
         Args:
@@ -270,12 +297,16 @@ class SleeperProvider:
             allow_missing: When true, a 404 yields ``None`` instead of raising.
                 Set this only for lookups where "not found" is a legitimate
                 answer, never for polling a draft that is supposed to exist.
+            bypass_edge_cache: Add a unique query parameter so Cloudflare treats
+                the request as a new resource. See :data:`_CACHE_BUSTER_PARAM`
+                for why this is necessary and where it must not be used.
         """
+        query = f"?{_CACHE_BUSTER_PARAM}={uuid.uuid4().hex}" if bypass_edge_cache else ""
 
         async def call() -> Any:
             await self._limiter.acquire()
             try:
-                response = await self._client.get(f"{self._base_url}{path}")
+                response = await self._client.get(f"{self._base_url}{path}{query}")
                 if allow_missing and response.status_code == 404:
                     return None
                 response.raise_for_status()
@@ -395,8 +426,17 @@ class SleeperProvider:
         return tuple(self._parse_draft(item) for item in payload if isinstance(item, dict))
 
     async def get_draft(self, draft_id: str) -> SleeperDraft | None:
-        """A single draft."""
-        payload = await self._get(f"/draft/{draft_id}", "get_draft", allow_missing=True)
+        """A single draft.
+
+        Read past the edge cache: a draft's status is how a live poller learns
+        the draft has finished.
+        """
+        payload = await self._get(
+            f"/draft/{draft_id}",
+            "get_draft",
+            allow_missing=True,
+            bypass_edge_cache=True,
+        )
         if not payload or not isinstance(payload, dict):
             return None
         return self._parse_draft(payload)
@@ -412,7 +452,9 @@ class SleeperProvider:
         picks yet" and "this draft no longer exists" must stay distinguishable,
         or a transient lookup failure would look like an empty board.
         """
-        payload = await self._get(f"/draft/{draft_id}/picks", "get_draft_picks")
+        payload = await self._get(
+            f"/draft/{draft_id}/picks", "get_draft_picks", bypass_edge_cache=True
+        )
         if not isinstance(payload, list):
             return ()
 

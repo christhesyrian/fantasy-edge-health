@@ -356,3 +356,70 @@ class TestPlayerCache:
             return_value=httpx.Response(200, json={"4001": {"player_id": "4001"}})
         )
         assert await provider.get_all_players(cache_path=cache) == {"4001": {"player_id": "4001"}}
+
+
+class TestEdgeCacheBypass:
+    """Reading past Cloudflare on the two endpoints that change during a draft.
+
+    Sleeper serves picks with `cache-control: public, s-maxage=86400`. Measured
+    on 2026-09-05, plain requests returned `cf-cache-status: HIT` with `age:
+    6460` - picks nearly two hours stale, identical however fast they were
+    repeated. Polling faster cannot beat an edge cache, so a live board is
+    impossible without this.
+    """
+
+    @respx.mock
+    async def test_draft_picks_are_requested_past_the_cache(
+        self, provider: SleeperProvider
+    ) -> None:
+        route = respx.get(url__startswith=f"{BASE}/draft/d1/picks").mock(
+            return_value=httpx.Response(200, json=fixture("picks"))
+        )
+
+        await provider.get_draft_picks("d1")
+
+        assert route.call_count == 1
+        assert "_fhe=" in str(route.calls[0].request.url)
+
+    @respx.mock
+    async def test_draft_metadata_is_requested_past_the_cache(
+        self, provider: SleeperProvider
+    ) -> None:
+        """A draft's status is how a live poller learns the draft has finished."""
+        route = respx.get(url__startswith=f"{BASE}/draft/d1").mock(
+            return_value=httpx.Response(200, json=fixture("draft"))
+        )
+
+        await provider.get_draft("d1")
+
+        assert "_fhe=" in str(route.calls[0].request.url)
+
+    @respx.mock
+    async def test_every_request_is_a_different_url(self, provider: SleeperProvider) -> None:
+        """A reused parameter is a cache key, so the second call would be stale."""
+        route = respx.get(url__startswith=f"{BASE}/draft/d1/picks").mock(
+            return_value=httpx.Response(200, json=fixture("picks"))
+        )
+
+        for _ in range(4):
+            await provider.get_draft_picks("d1")
+
+        urls = {str(call.request.url) for call in route.calls}
+        assert len(urls) == 4
+
+    @respx.mock
+    async def test_the_player_universe_is_not_cache_busted(
+        self, provider: SleeperProvider, tmp_path: Path
+    ) -> None:
+        """14.6 MB that changes daily, cached locally for twenty hours on purpose.
+
+        Bypassing the edge here would be pure cost to the provider for nothing,
+        which is why the bypass is opt-in per call rather than a client default.
+        """
+        route = respx.get(f"{BASE}/players/nfl").mock(
+            return_value=httpx.Response(200, json={"1": {"player_id": "1"}})
+        )
+
+        await provider.get_all_players(cache_path=tmp_path / "players.json")
+
+        assert "_fhe=" not in str(route.calls[0].request.url)

@@ -123,6 +123,22 @@ fix is one glance rather than a guess.
 
 ---
 
+> **Sleeper serves draft picks from a Cloudflare cache that can be hours
+> stale.** `/draft/{id}/picks` returns `cache-control: public, s-maxage=86400,
+> stale-while-revalidate=300`. Measured 2026-09-05 against a real draft: plain
+> requests returned `cf-cache-status: HIT` with `age: 6460` — picks nearly two
+> hours old, byte-identical however fast they were repeated. **Polling faster
+> cannot beat an edge cache**, which is why a live board is impossible without
+> reading past it.
+>
+> A `cache-control: no-cache` request header is ignored, as it generally is for
+> a `public` response. Appending a unique query parameter returns
+> `cf-cache-status: MISS` every time; verified at 5/5 and again 4/4 through the
+> adapter. The adapter does this on `/draft/{id}/picks` and `/draft/{id}` only —
+> the two endpoints that change during a draft — and never on `/players/nfl`,
+> which is 14.6 MB, changes daily, and is cached locally for twenty hours on
+> purpose.
+
 ## nflverse — schedules
 
 Added for fantasy-playoff strength of schedule.

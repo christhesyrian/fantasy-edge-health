@@ -27,8 +27,14 @@ tracked in git, so it does not appear on GitHub.
 make quality        # format, lint, mypy, pytest, then the frontend gates
 ```
 
-Expected: **745 Python tests**, **64 frontend tests**, ruff clean,
-`mypy --strict` clean across 155 files, eslint clean, `tsc` clean. Plus
+Expected: **749 Python tests**, **64 frontend tests**, ruff clean,
+`mypy --strict` clean across 155 files, eslint clean, `tsc` clean.
+
+> **Node must be Homebrew's.** `/usr/local/bin/node` is **v20.11.1** and shadows
+> `/opt/homebrew/bin/node` (**v25.6.0**) on a default PATH. Vitest then dies with
+> `node:util does not provide an export named 'styleText'`, which was added in
+> 20.12 — a confusing failure that has nothing to do with the code. Put
+> `/opt/homebrew/bin` first, or `PATH="/opt/homebrew/bin:$PATH" make quality`. Plus
 **23 Playwright end-to-end tests** — `npm run e2e` (12, against a real API) and
 `npm run e2e:preview` (11, against offline preview mode with no API at all).
 
@@ -187,6 +193,21 @@ Each has a regression test named after the symptom.
   records why the model is deliberately not in production.
 
 ### Done since the last handoff
+
+**The live board was hours stale, and it was never the poller (2026-09-05)**
+- Sleeper serves `/draft/{id}/picks` through Cloudflare with
+  `cache-control: public, s-maxage=86400`. Measured against a real draft: plain
+  requests returned `cf-cache-status: HIT` with **`age: 6460`** — picks nearly
+  two hours old, byte-identical however fast they were repeated.
+- **Polling faster cannot beat an edge cache.** The previous pass tuned the poll
+  schedule from 9 s to 1 s and the board still lagged, because the request was
+  being answered by Cloudflare rather than Sleeper. A draft log showed the
+  symptom plainly: 638 polls, but picks arriving in batches of 15 every ~16 s,
+  which was edge revalidation cadence rather than anything this code did.
+- A `cache-control: no-cache` request header is ignored. A unique query
+  parameter returns `MISS` every time — verified 5/5 by hand and 4/4 through the
+  adapter. Applied to `/draft/{id}/picks` and `/draft/{id}` only, never to
+  `/players/nfl`.
 
 **Live board latency, near your turn (2026-09-04)**
 - Measured first: Sleeper answers in 30 ms and the board recomputes in 27 ms, so
