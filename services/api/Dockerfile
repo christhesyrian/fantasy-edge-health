@@ -5,7 +5,7 @@
 # Multi-stage so the runtime layer carries no build toolchain, and runs as a
 # non-root user because a container that does not need root should not have it.
 
-FROM python:3.13-slim AS builder
+FROM python:3.14-slim AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -28,7 +28,7 @@ RUN python -m venv /opt/venv \
 
 # ---------------------------------------------------------------------------
 
-FROM python:3.13-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
